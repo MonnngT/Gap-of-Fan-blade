@@ -7,47 +7,67 @@ import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接 (官方验证版)
+# 1. 基础配置 & 谷歌表格连接 (调试版)
 # ==========================================
-st.set_page_config(page_title="盘间隙数据记录(云端版)", page_icon="☁️", layout="wide")
+st.set_page_config(page_title="盘间隙数据记录(调试版)", page_icon="🐞", layout="wide")
 
-# 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
+# 谷歌表格名称
 SHEET_NAME = "Gap_Data"
 
-# --- 连接函数 (使用 google-auth 底层验证，绕过 gspread 自动文件读取) ---
+# --- 连接函数 (带详细体检功能) ---
 def get_google_sheet():
-    """连接到 Google Sheets"""
+    """连接到 Google Sheets 并显示进度"""
+    status_container = st.empty() # 创建一个临时显示区
+    
     try:
-        # 1. 获取配置字典
+        # [步骤 1] 读取 Secrets
+        # status_container.info("🕵️‍♂️ 正在读取密钥配置...")
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ 未找到 Secrets 配置。请在 Streamlit App Settings -> Secrets 中配置 [gcp_service_account]。")
+            st.error("❌ 未找到 Secrets 配置！")
             return None
-            
-        # 使用 dict() 确保我们操作的是字典副本
+        
+        # 强制转换为字典，确保不是字符串
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. 修复私钥换行符 (关键步骤：处理 Streamlit Secrets 的格式问题)
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        # [检查点] 确保私钥存在
+        if "private_key" not in creds_dict:
+            st.error("❌ Secrets 中缺少 'private_key' 字段！")
+            return None
 
-        # 3. 定义权限范围 (Scopes)
+        # [步骤 2] 修复私钥格式
+        # status_container.info("🔧 正在格式化私钥...")
+        raw_key = creds_dict["private_key"]
+        if "\\n" in raw_key:
+            creds_dict["private_key"] = raw_key.replace("\\n", "\n")
+        
+        # [步骤 3] 创建凭证对象
+        # status_container.info("🔐 正在生成谷歌验证凭证...")
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-
-        # 4. ✅ 显式创建凭证 (这是核心修复点：直接用字典生成凭证，不读文件)
+        # 这里是关键：使用 from_service_account_info 直接处理字典
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         
-        # 5. 授权并连接
+        # [步骤 4] 登录 gspread
+        # status_container.info("☁️ 正在连接谷歌服务器...")
         client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).sheet1  # 打开第一个工作表
+        
+        # [步骤 5] 打开表格
+        # status_container.info(f"📂 正在打开表格: {SHEET_NAME}...")
+        sheet = client.open(SHEET_NAME).sheet1
+        
+        # status_container.success("✅ 连接成功！")
+        time.sleep(1)
+        status_container.empty() # 清除进度提示
         return sheet
 
     except Exception as e:
-        # 打印详细错误
-        st.error("❌ 连接失败。")
-        st.code(f"错误详情: {str(e)}")
+        st.error("❌ 连接过程中发生错误！")
+        # 这里会把错误分类打印出来
+        st.markdown(f"**错误类型:** `{type(e).__name__}`")
+        st.markdown(f"**错误详情:**")
+        st.code(str(e))
         return None
 
 # --- 数据读取函数 ---
@@ -180,7 +200,7 @@ with st.sidebar:
         st.success("✅ 已连接到 Google Sheets")
     else:
         st.error("❌ 未连接到云端数据库")
-        st.info("请检查 Secrets 配置")
+        st.info("请查看右侧的错误详情")
         st.stop() # 如果没连接，停止运行后续代码
 
 # ==========================================

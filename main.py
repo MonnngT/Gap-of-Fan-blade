@@ -1,38 +1,42 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta, timezone
 import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接
+# 1. 基础配置 & 谷歌表格连接 (修复版)
 # ==========================================
 st.set_page_config(page_title="盘间隙数据记录(云端版)", page_icon="☁️", layout="wide")
 
-# 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
+# 谷歌表格名称
 SHEET_NAME = "Gap_Data"
 
-# --- 连接函数 ---
+# --- 连接函数 (新版：自动修复私钥格式) ---
 def get_google_sheet():
     """连接到 Google Sheets"""
-    # 定义权限范围
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # 从 Streamlit Secrets 获取密钥信息
-    # 注意：在 Streamlit Cloud 部署时，我们会把 JSON 内容填入 Secrets
     try:
+        # 1. 获取配置字典
+        # 注意: 这里的 "gcp_service_account" 必须和您 Secrets 里的标题 [gcp_service_account] 一致
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).sheet1  # 打开第一个工作表
+        
+        # 2. 关键修复：自动处理私钥中的换行符
+        # Streamlit 有时候会把 \n 读取为字符串 "\\n"，我们需要把它变回真正的换行符
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
+        # 3. 使用 gspread 原生方法连接 (更稳定，不再依赖 oauth2client)
+        client = gspread.service_account_from_dict(creds_dict)
+        
+        # 4. 打开表格
+        sheet = client.open(SHEET_NAME).sheet1
         return sheet
     except Exception as e:
-        st.error(f"无法连接到谷歌表格，请检查 Secrets 配置或表格名称。\n错误信息: {e}")
+        st.error(f"❌ 无法连接到谷歌表格。\n原因: {e}")
+        st.info("请检查 Secrets 中的 JSON 内容是否完整，或者表格名称是否正确。")
         return None
-
-# --- 数据读取函数 ---
+# --- 数据读取函数 (保持不变，下面接原来的 load_data) ---
 def load_data(sheet):
     """读取所有数据并转换为 DataFrame"""
     try:
@@ -418,3 +422,4 @@ if is_connected:
         st.info("💡 提示：如需删除数据，请直接登录 Google Sheets 进行操作，刷新本页面即可同步。")
     else:
         st.info("👋 云端暂无数据")
+

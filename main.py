@@ -1,42 +1,57 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta, timezone
 import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接 (修复版)
+# 1. 基础配置 & 谷歌表格连接 (防弹修复版)
 # ==========================================
 st.set_page_config(page_title="盘间隙数据记录(云端版)", page_icon="☁️", layout="wide")
 
-# 谷歌表格名称
+# 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
 SHEET_NAME = "Gap_Data"
 
-# --- 连接函数 (新版：自动修复私钥格式) ---
+# --- 连接函数 (使用 google-auth 底层验证，绕过 gspread 自动判断) ---
 def get_google_sheet():
     """连接到 Google Sheets"""
     try:
         # 1. 获取配置字典
         # 注意: 这里的 "gcp_service_account" 必须和您 Secrets 里的标题 [gcp_service_account] 一致
+        if "gcp_service_account" not in st.secrets:
+            st.error("❌ 未找到 Secrets 配置。请在 Streamlit App Settings -> Secrets 中配置 [gcp_service_account]。")
+            return None
+            
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. 关键修复：自动处理私钥中的换行符
+        # 2. 修复私钥换行符 (关键步骤)
         # Streamlit 有时候会把 \n 读取为字符串 "\\n"，我们需要把它变回真正的换行符
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
-        # 3. 使用 gspread 原生方法连接 (更稳定，不再依赖 oauth2client)
-        client = gspread.service_account_from_dict(creds_dict)
+        # 3. 定义权限范围 (Scopes)
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        # 4. ✅ 显式创建凭证 (不让 gspread 瞎猜)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         
-        # 4. 打开表格
-        sheet = client.open(SHEET_NAME).sheet1
+        # 5. 授权并连接
+        client = gspread.authorize(creds)
+        sheet = client.open(SHEET_NAME).sheet1  # 打开第一个工作表
         return sheet
+
     except Exception as e:
-        st.error(f"❌ 无法连接到谷歌表格。\n原因: {e}")
-        st.info("请检查 Secrets 中的 JSON 内容是否完整，或者表格名称是否正确。")
+        # 这里会打印出非常具体的错误原因
+        st.error(f"❌ 连接失败。")
+        st.code(f"错误详情: {str(e)}") # 以此格式显示错误，更清晰
         return None
-# --- 数据读取函数 (保持不变，下面接原来的 load_data) ---
+
+# --- 数据读取函数 ---
 def load_data(sheet):
     """读取所有数据并转换为 DataFrame"""
     try:
@@ -51,7 +66,6 @@ def load_data(sheet):
 # -------------------------------------------------------
 # A. 扇叶型号数据库
 # -------------------------------------------------------
-# (保持原有的数据库不变)
 Z_SERIES_FANS = {
     "1ZL/PAG/GREY Fan blade": "11100200027", "1ZL/PAGI Fan blade": "11100500027", "1ZR/PPG Fan blade": "11130100027",
     "1ZR/PAG/GREY Fan blade": "11130200027", "1ZR/PAG/Black Fan blade": "11131300027", "2ZL/PPG Fan blade": "12100100027",
@@ -381,17 +395,15 @@ if is_connected:
     df_history = load_data(sheet)
     
     if not df_history.empty:
-        # 智能清洗列 (同之前的逻辑)
+        # 智能清洗列
         data_cols = [col for col in df_history.columns if col.startswith("数据_")]
-        # 尝试排序，防止报错
         try:
             data_cols.sort(key=lambda x: int(x.split('_')[1]))
         except:
-            pass # 如果列名格式不对就不强求排序
+            pass 
         
         valid_data_cols = []
         for col in data_cols:
-            # 替换空字符串为 NaN 方便 dropna 判断
             temp_col = df_history[col].replace("", pd.NA)
             if not temp_col.dropna().empty:
                 valid_data_cols.append(col)
@@ -422,4 +434,3 @@ if is_connected:
         st.info("💡 提示：如需删除数据，请直接登录 Google Sheets 进行操作，刷新本页面即可同步。")
     else:
         st.info("👋 云端暂无数据")
-

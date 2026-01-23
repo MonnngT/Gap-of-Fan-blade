@@ -7,27 +7,26 @@ import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接 (防弹修复版)
+# 1. 基础配置 & 谷歌表格连接 (官方验证版)
 # ==========================================
 st.set_page_config(page_title="盘间隙数据记录(云端版)", page_icon="☁️", layout="wide")
 
 # 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
 SHEET_NAME = "Gap_Data"
 
-# --- 连接函数 (使用 google-auth 底层验证，绕过 gspread 自动判断) ---
+# --- 连接函数 (使用 google-auth 底层验证，绕过 gspread 自动文件读取) ---
 def get_google_sheet():
     """连接到 Google Sheets"""
     try:
         # 1. 获取配置字典
-        # 注意: 这里的 "gcp_service_account" 必须和您 Secrets 里的标题 [gcp_service_account] 一致
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 未找到 Secrets 配置。请在 Streamlit App Settings -> Secrets 中配置 [gcp_service_account]。")
             return None
             
+        # 使用 dict() 确保我们操作的是字典副本
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. 修复私钥换行符 (关键步骤)
-        # Streamlit 有时候会把 \n 读取为字符串 "\\n"，我们需要把它变回真正的换行符
+        # 2. 修复私钥换行符 (关键步骤：处理 Streamlit Secrets 的格式问题)
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
@@ -37,7 +36,7 @@ def get_google_sheet():
             "https://www.googleapis.com/auth/drive"
         ]
 
-        # 4. ✅ 显式创建凭证 (不让 gspread 瞎猜)
+        # 4. ✅ 显式创建凭证 (这是核心修复点：直接用字典生成凭证，不读文件)
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         
         # 5. 授权并连接
@@ -46,9 +45,9 @@ def get_google_sheet():
         return sheet
 
     except Exception as e:
-        # 这里会打印出非常具体的错误原因
-        st.error(f"❌ 连接失败。")
-        st.code(f"错误详情: {str(e)}") # 以此格式显示错误，更清晰
+        # 打印详细错误
+        st.error("❌ 连接失败。")
+        st.code(f"错误详情: {str(e)}")
         return None
 
 # --- 数据读取函数 ---
@@ -64,7 +63,7 @@ def load_data(sheet):
         return pd.DataFrame()
 
 # -------------------------------------------------------
-# A. 扇叶型号数据库
+# A. 扇叶型号数据库 (完整数据)
 # -------------------------------------------------------
 Z_SERIES_FANS = {
     "1ZL/PAG/GREY Fan blade": "11100200027", "1ZL/PAGI Fan blade": "11100500027", "1ZR/PPG Fan blade": "11130100027",

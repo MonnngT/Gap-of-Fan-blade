@@ -451,6 +451,21 @@ if is_connected:
             use_container_width=True
         )
         st.info("💡 提示：如需删除数据，请直接登录 Google Sheets 进行操作，刷新本页面即可同步。")
+            
+            # --- 👇 这里是新增的下载按钮代码 (注意缩进要对齐) ---
+            st.write("")
+            st.write("📥 **数据导出**")
+            csv = df_show.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="点击下载 Excel (CSV格式)",
+                data=csv,
+                file_name=f"间隙数据_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                type="primary"
+            )
+            # --------------------------------------------------
+
     else:
         st.info("👋 云端暂无数据")
+
 

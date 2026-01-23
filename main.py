@@ -7,74 +7,54 @@ import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接 (调试版)
+# 1. 基础配置 & 谷歌表格连接 (极速缓存版)
 # ==========================================
-st.set_page_config(page_title="叶间隙录入系统", page_icon="📏", layout="wide")
+st.set_page_config(page_title="扇叶间隙录入系统", page_icon="📏", layout="wide")
 
-# 谷歌表格名称
+# 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
 SHEET_NAME = "Gap_Data"
 
-# --- 连接函数 (带详细体检功能) ---
+# --- [加速锁 1] 缓存连接资源 (1小时内保持连接) ---
+@st.cache_resource(ttl=3600)
 def get_google_sheet():
-    """连接到 Google Sheets 并显示进度"""
-    status_container = st.empty() # 创建一个临时显示区
-    
+    """连接到 Google Sheets"""
     try:
-        # [步骤 1] 读取 Secrets
-        # status_container.info("🕵️‍♂️ 正在读取密钥配置...")
+        # 1. 获取配置字典
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ 未找到 Secrets 配置！")
+            st.error("❌ 未找到 Secrets 配置。请在 Streamlit App Settings -> Secrets 中配置 [gcp_service_account]。")
             return None
-        
-        # 强制转换为字典，确保不是字符串
+            
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # [检查点] 确保私钥存在
-        if "private_key" not in creds_dict:
-            st.error("❌ Secrets 中缺少 'private_key' 字段！")
-            return None
+        # 2. 修复私钥换行符
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
-        # [步骤 2] 修复私钥格式
-        # status_container.info("🔧 正在格式化私钥...")
-        raw_key = creds_dict["private_key"]
-        if "\\n" in raw_key:
-            creds_dict["private_key"] = raw_key.replace("\\n", "\n")
-        
-        # [步骤 3] 创建凭证对象
-        # status_container.info("🔐 正在生成谷歌验证凭证...")
+        # 3. 定义权限范围
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        # 这里是关键：使用 from_service_account_info 直接处理字典
+
+        # 4. 显式创建凭证
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         
-        # [步骤 4] 登录 gspread
-        # status_container.info("☁️ 正在连接谷歌服务器...")
+        # 5. 授权并连接
         client = gspread.authorize(creds)
-        
-        # [步骤 5] 打开表格
-        # status_container.info(f"📂 正在打开表格: {SHEET_NAME}...")
         sheet = client.open(SHEET_NAME).sheet1
-        
-        # status_container.success("✅ 连接成功！")
-        time.sleep(1)
-        status_container.empty() # 清除进度提示
         return sheet
 
     except Exception as e:
-        st.error("❌ 连接过程中发生错误！")
-        # 这里会把错误分类打印出来
-        st.markdown(f"**错误类型:** `{type(e).__name__}`")
-        st.markdown(f"**错误详情:**")
-        st.code(str(e))
+        st.error(f"❌ 连接失败: {str(e)}")
         return None
 
-# --- 数据读取函数 ---
-def load_data(sheet):
+# --- [加速锁 2] 缓存数据读取 (10秒缓存，防止频繁拉取卡顿) ---
+# 使用 _sheet 下划线参数名，告诉 Streamlit 忽略这个对象的哈希检查
+@st.cache_data(ttl=10)
+def load_data(_sheet):
     """读取所有数据并转换为 DataFrame"""
     try:
-        data = sheet.get_all_records()
+        data = _sheet.get_all_records()
         if not data:
             return pd.DataFrame()
         df = pd.DataFrame(data)
@@ -200,7 +180,7 @@ with st.sidebar:
         st.success("✅ 已连接到 Google Sheets")
     else:
         st.error("❌ 未连接到云端数据库")
-        st.info("请查看右侧的错误详情")
+        st.info("请检查 Secrets 配置")
         st.stop() # 如果没连接，停止运行后续代码
 
 # ==========================================
@@ -266,6 +246,7 @@ selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整
 # ==========================================
 current_count = 0
 if is_connected:
+    # 注意：这里调用带缓存的 load_data，传入 sheet 对象
     df_cloud = load_data(sheet)
     if not df_cloud.empty:
         required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
@@ -399,6 +380,10 @@ if submitted:
             sheet.append_row(row_data)
             
             st.success(f"✅ 云端保存成功！{current_time_str}")
+            
+            # 🚀 关键步骤：清除缓存，确保能立刻拉取到最新数据
+            st.cache_data.clear()
+            
             time.sleep(1)
             st.rerun()
         except Exception as e:
@@ -410,7 +395,7 @@ if submitted:
 st.divider()
 if is_connected:
     st.subheader("📊 云端历史记录")
-    # 重新读取最新数据
+    # 重新读取最新数据 (带缓存)
     df_history = load_data(sheet)
     
     if not df_history.empty:
@@ -470,6 +455,3 @@ if is_connected:
 
     else:
         st.info("👋 云端暂无数据")
-
-
-

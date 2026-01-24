@@ -48,7 +48,7 @@ def get_google_sheet():
         st.error(f"❌ 连接失败: {str(e)}")
         return None
 
-# --- [加速锁 2] 缓存数据读取 (10秒缓存，防止频繁拉取卡顿) ---
+# --- [加速锁 2] 缓存数据读取 (10秒缓存) ---
 # 使用 _sheet 下划线参数名，告诉 Streamlit 忽略这个对象的哈希检查
 @st.cache_data(ttl=10)
 def load_data(_sheet):
@@ -390,16 +390,18 @@ if submitted:
             st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 (云端读取)
+# 7. 历史记录 & 删除管理 (云端读取)
 # ==========================================
 st.divider()
 if is_connected:
-    st.subheader("📊 云端历史记录")
-    # 重新读取最新数据 (带缓存)
+    st.subheader("📊 云端历史记录管理")
+    st.caption("勾选行首的框，然后点击下方红色按钮删除。")
+    
+    # 1. 读取数据
     df_history = load_data(sheet)
     
     if not df_history.empty:
-        # 智能清洗列
+        # A. 数据清洗与列排序
         data_cols = [col for col in df_history.columns if col.startswith("数据_")]
         try:
             data_cols.sort(key=lambda x: int(x.split('_')[1]))
@@ -420,12 +422,27 @@ if is_connected:
         
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
-        # 倒序显示，最新的在最上面
-        df_show = df_history[final_cols].iloc[::-1]
+        # B. 准备显示的数据 (计算原始行号)
+        # Google Sheet 第1行是表头，数据从第2行开始
+        # 所以 df 的 index 0 对应 Sheet row 2
+        df_history["_original_row_index"] = df_history.index + 2
+        
+        # 倒序显示，最新的在最上面 (但我们记录了原始行号，所以不怕乱)
+        df_show = df_history[final_cols + ["_original_row_index"]].iloc[::-1].copy()
+        
+        # C. 增加“删除”勾选列
+        df_show.insert(0, "删除?", False)
 
-        st.dataframe(
+        # D. 显示可编辑表格
+        edited_df = st.data_editor(
             df_show,
             column_config={
+                "删除?": st.column_config.CheckboxColumn(
+                    "删除?",
+                    help="勾选后点击下方按钮删除",
+                    default=False,
+                ),
+                "_original_row_index": None, # 隐藏行号列，不给用户看
                 "工单号": st.column_config.TextColumn(width="medium"),
                 "盘模具号": st.column_config.TextColumn("盘/Retaining模具号", width="medium"),
                 "Hub模具号": st.column_config.TextColumn(width="medium"),
@@ -433,25 +450,54 @@ if is_connected:
                 "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
             },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            disabled=[c for c in df_show.columns if c != "删除?"] # 除了勾选框，其他都只读
         )
-        st.info("💡 提示：如需删除数据，请直接登录 Google Sheets 进行操作，刷新本页面即可同步。")
 
-        # --- 下载按钮区域 ---
-        st.write("")
-        st.write("📥 **数据导出**")
+        # E. 删除按钮逻辑
+        col_del, col_dl = st.columns([1, 4])
+        with col_del:
+            if st.button("🗑️ 删除选中行", type="primary"):
+                # 1. 找出所有被勾选的行
+                rows_to_delete = edited_df[edited_df["删除?"] == True]
+                
+                if rows_to_delete.empty:
+                    st.warning("请先勾选需要删除的数据！")
+                else:
+                    try:
+                        # 2. 获取这些行的原始 Google Sheet 行号
+                        # 必须从大到小排序！否则删了第5行，第6行就变第5行了，再删第6行就会删错。
+                        sheet_rows = sorted(rows_to_delete["_original_row_index"].tolist(), reverse=True)
+                        
+                        status_msg = st.empty()
+                        status_msg.info("⏳ 正在删除...")
+                        
+                        # 3. 循环删除
+                        for row_idx in sheet_rows:
+                            sheet.delete_rows(row_idx)
+                        
+                        st.success(f"✅ 成功删除 {len(sheet_rows)} 条数据！")
+                        
+                        # 4. 强制清除缓存并刷新
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ 删除失败: {e}")
         
-        # 将数据转换为 CSV 格式
-        csv = df_show.to_csv(index=False).encode('utf-8-sig')
-        
-        st.download_button(
-            label="点击下载 Excel (CSV格式)",
-            data=csv,
-            file_name=f"间隙数据_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
-            type="primary"
-        )
-        # ------------------
+        with col_dl:
+            # --- 下载按钮 ---
+            st.write("") # 占位对齐
+            # 将数据转换为 CSV 格式
+            csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
+            
+            st.download_button(
+                label="📥 下载 Excel (CSV)",
+                data=csv,
+                file_name=f"间隙数据_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
 
     else:
         st.info("👋 云端暂无数据")

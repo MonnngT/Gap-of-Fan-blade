@@ -11,7 +11,7 @@ import time
 # ==========================================
 st.set_page_config(page_title="扇叶间隙录入系统", page_icon="📏", layout="wide")
 
-# 谷歌表格名称 (必须与您在 Google Drive 里建立的表格名字一模一样)
+# 谷歌表格名称
 SHEET_NAME = "Gap_Data"
 
 # --- [加速锁 1] 缓存连接资源 (1小时内保持连接) ---
@@ -19,27 +19,21 @@ SHEET_NAME = "Gap_Data"
 def get_google_sheet():
     """连接到 Google Sheets"""
     try:
-        # 1. 获取配置字典
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 未找到 Secrets 配置。请在 Streamlit App Settings -> Secrets 中配置 [gcp_service_account]。")
             return None
             
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. 修复私钥换行符
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
-        # 3. 定义权限范围
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
 
-        # 4. 显式创建凭证
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        
-        # 5. 授权并连接
         client = gspread.authorize(creds)
         sheet = client.open(SHEET_NAME).sheet1
         return sheet
@@ -49,7 +43,6 @@ def get_google_sheet():
         return None
 
 # --- [加速锁 2] 缓存数据读取 (10秒缓存) ---
-# 使用 _sheet 下划线参数名，告诉 Streamlit 忽略这个对象的哈希检查
 @st.cache_data(ttl=10)
 def load_data(_sheet):
     """读取所有数据并转换为 DataFrame"""
@@ -62,69 +55,122 @@ def load_data(_sheet):
     except Exception:
         return pd.DataFrame()
 
-# -------------------------------------------------------
-# A. 扇叶型号数据库 (完整数据)
-# -------------------------------------------------------
+# ==========================================
+# A. 扇叶型号数据库 (更新版)
+# ==========================================
+
+# --- Z系列 (包含原来的 + 拆分 L/R 的) ---
 Z_SERIES_FANS = {
+    # 原始单向或无需拆分的
     "1ZL/PAG/GREY Fan blade": "11100200027", "1ZL/PAGI Fan blade": "11100500027", "1ZR/PPG Fan blade": "11130100027",
-    "1ZR/PAG/GREY Fan blade": "11130200027", "1ZR/PAG/Black Fan blade": "11131300027", "2ZL/PPG Fan blade": "12100100027",
-    "2ZL/PAG/GREY Fan blade": "12100200027", "2ZL/PAGAS Fan blade": "12100300027", "2ZL/PAGI Fan blade": "12100500027",
-    "2ZL/AL Fan blade": "12100700058", "2Z2L/PAG/GREY Fan blade": "12102400227", "2ZL/PAGV1 Fan blade": "12102500027",
-    "2ZR/PAG/BLACK Fan blade": "12131300027", "2Z2R/PAG/BLACK Fan blade": "12131300227", "3ZL/AL Fan blade": "13100700091",
-    "3ZL/PAGI Fan Blade": "13101500012", "4ZL/PPG Fan Blade": "14100100049", "4ZL/PAG Fan Blade": "14100200049",
-    "4ZL/PAGAS Fan Blade": "14100300049", "4ZL/PAG/BLACK Fan Blade": "14100500049", "4ZL/AL Fan Blade": "14100700064",
-    "4ZL/PAGV1 Fan Blade": "14102500049", "4ZR/PPG Fan Blade": "14130100050", "4ZR/PAG Fan Blade": "14130200050",
-    "4ZR/PAGAS Fan Blade": "14130300050", "4ZR/PAG/BLACK Fan Blade": "14130500050", "4ZR/PAGI Fan Blade": "14130600050",
-    "4ZR/AL Fan Blade": "14130700065", "4ZR/PAGV1 Fan blade": "14132500050", "5ZL/PPG Fan Blade": "15100100018",
-    "5ZL/PAG Fan Blade": "15100200018", "5ZL/PAGAS Fan Blade": "15100300018", "5ZL/PAGI Fan blade": "15100500018",
-    "5ZL/AL Fan blade": "15100700023", "5ZR/PPG Fan Blade": "15130100036", "5ZR/PAG Fan Blade": "15130200036",
-    "5ZR/PAGAS Fan Blade": "15130300036", "5ZR/PAGST Fan Blade": "15130400036", "5ZR/PAGI Fan Blade": "15130500036",
-    "5ZR/AL Fan Blade": "15130700066", "6Z/PPG Fan blade": "16180100081", "6Z/PAG Fan blade": "16180200081",
-    "6Z/PAG/BLACK Fan blade": "16181300081", "7ZL/PPG Fan Blade": "17100100008", "7ZL/PAG/GREY Fan blade": "17102400008",
-    "7ZL/PAGAS Fan Blade": "17103100008", "7ZR/PPG Fan blade": "17130100009", "7ZR/PAG/GREY Fan blade": "17132400009",
-    "TR7Z/PPG Fan blade": "17170100087", "TR7ZL/AL Fan Blade": "17170700078", "TR7ZR/AL Fan Blade": "17170700087",
-    "TR8Z/AL Fan Blade": "18170700094"
+    "1ZR/PAG/GREY Fan blade": "11130200027", "1ZR/PAG/Black Fan blade": "11131300027", 
+    "2ZL/PPG Fan blade": "12100100027", "2ZL/PAG/GREY Fan blade": "12100200027", "2ZL/PAGAS Fan blade": "12100300027", 
+    "2ZL/PAGI Fan blade": "12100500027", "2ZL/AL Fan blade": "12100700058", "2Z2L/PAG/GREY Fan blade": "12102400227", 
+    "2ZL/PAGV1 Fan blade": "12102500027", "2ZR/PAG/BLACK Fan blade": "12131300027", "2Z2R/PAG/BLACK Fan blade": "12131300227", 
+    "3ZL/AL Fan blade": "13100700091", "3ZL/PAGI Fan Blade": "13101500012", 
+    "4ZL/PPG Fan Blade": "14100100049", "4ZL/PAG Fan Blade": "14100200049", "4ZL/PAGAS Fan Blade": "14100300049", 
+    "4ZL/PAG/BLACK Fan Blade": "14100500049", "4ZL/AL Fan Blade": "14100700064", "4ZL/PAGV1 Fan Blade": "14102500049", 
+    "4ZR/PPG Fan Blade": "14130100050", "4ZR/PAG Fan Blade": "14130200050", "4ZR/PAGAS Fan Blade": "14130300050", 
+    "4ZR/PAG/BLACK Fan Blade": "14130500050", "4ZR/PAGI Fan Blade": "14130600050", "4ZR/AL Fan Blade": "14130700065", 
+    "4ZR/PAGV1 Fan blade": "14132500050", 
+    "5ZL/PPG Fan Blade": "15100100018", "5ZL/PAG Fan Blade": "15100200018", "5ZL/PAGAS Fan Blade": "15100300018", 
+    "5ZL/PAGI Fan blade": "15100500018", "5ZL/AL Fan blade": "15100700023", 
+    "5ZR/PPG Fan Blade": "15130100036", "5ZR/PAG Fan Blade": "15130200036", "5ZR/PAGAS Fan Blade": "15130300036", 
+    "5ZR/PAGST Fan Blade": "15130400036", "5ZR/PAGI Fan Blade": "15130500036", "5ZR/AL Fan Blade": "15130700066", 
+    "7ZL/PPG Fan Blade": "17100100008", "7ZL/PAG/GREY Fan blade": "17102400008", "7ZL/PAGAS Fan Blade": "17103100008", 
+    "7ZR/PPG Fan blade": "17130100009", "7ZR/PAG/GREY Fan blade": "17132400009",
+    "TR7ZL/AL Fan Blade": "17170700078", "TR7ZR/AL Fan Blade": "17170700087",
+
+    # --- 拆分 L/R 的 Z系列 ---
+    # 6Z 拆分
+    "6ZL/PPG Fan blade": "16180100081", "6ZR/PPG Fan blade": "16180100081",
+    "6ZL/PAG Fan blade": "16180200081", "6ZR/PAG Fan blade": "16180200081",
+    "6ZL/PAG/BLACK Fan blade": "16181300081", "6ZR/PAG/BLACK Fan blade": "16181300081",
+    
+    # TR7Z/PPG 拆分
+    "TR7ZL/PPG Fan blade": "17170100087", "TR7ZR/PPG Fan blade": "17170100087",
+    
+    # TR8Z/AL 拆分
+    "TR8ZL/AL Fan Blade": "18170700094", "TR8ZR/AL Fan Blade": "18170700094"
 }
+
+# --- EMAX 系列 (新增, 使用 Z 盘) ---
+EMAX_SERIES_FANS = {
+    "EMAX 4L/PAG Fan Blade": "14400200059",
+    "EMAX 4R/PAG Fan Blade": "14430200060"
+}
+
+# --- W系列 (更新 8W, TR11W 拆分) ---
 W_SERIES_FANS = {
+    # 原始
     "1WL/PPG/LP Fan Blade": "11700100084", "1WL/PAG/LP Fan blade": "11700200084", "1WL/PAGAS/LP Fan blade": "11700300084",
-    "1WL/PAG/BLACK/LP Fan blade": "11701300084", "1WL/PAGV1/LP Fan blade": "11702500084", "1WR/PPG/LP Fan Blade": "11730100062",
-    "1WR/PAG/LP Fan blade": "11730200062", "1WR/PAG/BLACK/LP Fan blade": "11731300062", "6WL/PPG/LP Fan blade": "16700100043",
-    "6WL/PPG/L=390/LP Fan blade": "16700100049", "6WL/PAG/LP Fan blade": "16700200043", "6WL/PAGAS/LP Fan blade": "16700300043",
-    "6WL/PAG/BLACK/LP Fan blade": "16700500043", "6WR/PPG/LP Fan blade": "16730100037", "6WR/PAG/LP Fan blade": "16730200037",
-    "6WR/PAGAS/LP Fan blade": "16730300037", "7WL/PPG/LP Fan blade": "17700100084", "9W2L/PPG/LP Fan blade": "19700100084",
-    "9W2L/PAG/LP Fan blade": "19700200084",
-    "1WL/PAG Fan Blade": "11700200095", "1WR/PAG Fan Blade": "11730200096", "1WR/PAG Fan Blade (11730200096)": "11730200096",
+    "1WL/PAG/BLACK/LP Fan blade": "11701300084", "1WL/PAGV1/LP Fan blade": "11702500084", 
+    "1WR/PPG/LP Fan Blade": "11730100062", "1WR/PAG/LP Fan blade": "11730200062", "1WR/PAG/BLACK/LP Fan blade": "11731300062", 
+    "6WL/PPG/LP Fan blade": "16700100043", "6WL/PPG/L=390/LP Fan blade": "16700100049", 
+    "6WL/PAG/LP Fan blade": "16700200043", "6WL/PAGAS/LP Fan blade": "16700300043", "6WL/PAG/BLACK/LP Fan blade": "16700500043", 
+    "6WR/PPG/LP Fan blade": "16730100037", "6WR/PAG/LP Fan blade": "16730200037", "6WR/PAGAS/LP Fan blade": "16730300037", 
+    "7WL/PPG/LP Fan blade": "17700100084", "9W2L/PPG/LP Fan blade": "19700100084", "9W2L/PAG/LP Fan blade": "19700200084",
+    "1WL/PAG Fan Blade": "11700200095", "1WR/PAG Fan Blade": "11730200096", 
     "2WL/PPG Fan blade": "12700100021", "2WL/PAG Fan blade": "12700200021", "3WL/PAG Fan blade": "13700200056",
     "5WL/PAG Fan blade": "15700200095", "5WL/AL Fan blade": "15700700014", "5WR/PAG Fan blade": "15730200096",
     "5WR/AL Fan blade": "15730700061", "6WL/PAG Fan blade": "16700200095", "6WL/AL Fan Blade": "16700700026",
-    "6WR/PAG Fan blade": "16730200096", "6WR/AL Fan Blade": "16730700085", "7WL/PPG Fan blade": "17700100039",
-    "7WL/PAG Fan blade": "17700200039", "7WL/PAGAS Fan blade": "17700300039", "7WR/PPG Fan blade": "17730100038",
-    "7WR/PAG Fan blade": "17730200038", "8W/PPG Fan blade": "18780100019", "8W/PAG Fan blade": "18780200019",
-    "8W/PAGAS Fan blade": "18780300019", "8W/PAGV1/L=355 Fan blade": "18782500024", "9WL/PPG Fan blade": "19700100063",
-    "9W2L/PPG Fan blade": "19700100064", "9WL/PAG Fan blade": "19700200063", "9W2L/PAG Fan blade": "19700200064",
-    "9W2L/PAG/LP Fan blade": "19700200084", "9WL/AL Fan blade": "19700700033", "9W2R/PPG Fan blade": "19730100030",
-    "9W2R/PAG Fan blade": "19730200030", "9WR/PAG Fan blade": "19730200031", "9WR/PAGAS Fan blade": "19730300031",
-    "9W2R/PAG/BLACK Fan blade": "19730500030", "9WR/AL Fan blade": "19730700034", "9W2R/PAG6-C Fan Blade": "19733700030",
-    "TR11W/AL Fan Blade": "19770700086", "3WTR/PAG50/GREY-UV Fan blade": "19951200029", "3WTR/PAG50/BLACK Fan blade": "19951300029"
+    "6WR/PAG Fan blade": "16730200096", "6WR/AL Fan Blade": "16730700085", 
+    "7WL/PPG Fan blade": "17700100039", "7WL/PAG Fan blade": "17700200039", "7WL/PAGAS Fan blade": "17700300039", 
+    "7WR/PPG Fan blade": "17730100038", "7WR/PAG Fan blade": "17730200038", 
+    "9WL/PPG Fan blade": "19700100063", "9W2L/PPG Fan blade": "19700100064", "9WL/PAG Fan blade": "19700200063", 
+    "9W2L/PAG Fan blade": "19700200064", "9W2L/PAG/LP Fan blade": "19700200084", "9WL/AL Fan blade": "19700700033", 
+    "9W2R/PPG Fan blade": "19730100030", "9W2R/PAG Fan blade": "19730200030", "9WR/PAG Fan blade": "19730200031", 
+    "9WR/PAGAS Fan blade": "19730300031", "9W2R/PAG/BLACK Fan blade": "19730500030", "9WR/AL Fan blade": "19730700034", 
+    "9W2R/PAG6-C Fan Blade": "19733700030",
+    "3WTR/PAG50/GREY-UV Fan blade": "19951200029", "3WTR/PAG50/BLACK Fan blade": "19951300029",
+
+    # --- 8W 拆分 L/R ---
+    "8WL/PPG Fan blade": "18780100019", "8WR/PPG Fan blade": "18780100019",
+    "8WL/PAG Fan blade": "18780200019", "8WR/PAG Fan blade": "18780200019",
+    "8WL/PAGAS Fan blade": "18780300019", "8WR/PAGAS Fan blade": "18780300019",
+    "8WL/PAGV1/L=355 Fan blade": "18782500024", "8WR/PAGV1/L=355 Fan blade": "18782500024",
+
+    # --- TR11W 拆分 L/R ---
+    "TR11WL/AL Fan Blade": "19770700086", "TR11WR/AL Fan Blade": "19770700086"
 }
+
 W_SERIES_YELLOW_KEYS = {
     "1WL/PPG/LP Fan Blade", "1WL/PAG/LP Fan blade", "1WL/PAGAS/LP Fan blade", "1WL/PAG/BLACK/LP Fan blade", "1WL/PAGV1/LP Fan blade",
     "1WR/PPG/LP Fan Blade", "1WR/PAG/LP Fan blade", "1WR/PAG/BLACK/LP Fan blade", "6WL/PPG/LP Fan blade", "6WL/PPG/L=390/LP Fan blade",
     "6WL/PAG/LP Fan blade", "6WL/PAGAS/LP Fan blade", "6WL/PAG/BLACK/LP Fan blade", "6WR/PPG/LP Fan blade", "6WR/PAG/LP Fan blade",
     "6WR/PAGAS/LP Fan blade", "7WL/PPG/LP Fan blade", "9W2L/PPG/LP Fan blade", "9W2L/PAG/LP Fan blade"
 }
+
+# --- G系列 ---
 G_SERIES_FANS = {
     "1GL/PPG Fan blade": "11710100089", "1GL/PAG/BLACK Fan blade": "11710200089", "10GL/PAG/BLACK Fan blade": "11801300088",
     "10GR/PAG/BLACK Fan Blade": "11831300042"
 }
-P_SERIES_FANS = {
+
+# --- P系列 (混合：有的用Z盘，有的用W盘，有的用P盘) ---
+# 1. P系列 - 使用 Z 盘
+P_SERIES_Z_USE = {
+    "PMAX4L/PAG/GREY Fan Blade": "14702400093",
+    "PMAX4R/PAG/GREY Fan Blade": "14732400094",
+    "PressureMAX 6L/PAG Fan Blade": "16900200079",
+    "PressureMAX 6R/PAG Fan Blade": "16930200074"
+}
+# 2. P系列 - 使用 W 盘
+P_SERIES_W_USE = {
+    "PMAX5L/PAG/BLACK Fan Blade": "15601300045",
+    "PMAX5R/PAG/BLACK Fan Blade": "15631300047"
+}
+# 3. P系列 - 原始 (PMAX40)
+P_SERIES_ORIGINAL = {
     "PMAX3L/PAG/GREY Fan Blade": "13900200059", "PMAX3R/PAG/GREY Fan Blade": "13932400060"
 }
-ALL_FANS_DB = {**Z_SERIES_FANS, **W_SERIES_FANS, **G_SERIES_FANS, **P_SERIES_FANS}
 
-# -------------------------------------------------------
+ALL_FANS_DB = {**Z_SERIES_FANS, **EMAX_SERIES_FANS, **W_SERIES_FANS, **G_SERIES_FANS, 
+               **P_SERIES_Z_USE, **P_SERIES_W_USE, **P_SERIES_ORIGINAL}
+
+# ==========================================
 # B. 盘配置数据库
-# -------------------------------------------------------
+# ==========================================
 DISC_CONFIG_Z = {
     "Z5盘": ["Retaining plate/5 (PN: 21050700103) X2", "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050700603)", "Retaining plate/5 + Hub plate/5/000010 (Ret:21050700103, Hub:21050702503)", "Retaining plate/5 + Hub plate/5/424412 (Ret:21050700103, Hub:21050702603)", "Retaining plate/5 + Hub plate/5/625212 (Ret:21050700103, Hub:21050704403)", "Retaining plate/5 + Hub plate/5/625223 (Ret:21050700103, Hub:21050708503)", "Retaining plate/5 + Hub Plate/5/825215 (Ret:21050700103, Hub:21050709403)"],
     "Z6盘": ["Retaining plate/6 + Hub plate/6/000015 (Ret:21060702406, Hub:21060702506)", "Retaining plate/6/000075 (PN: 21060708106) X2"],
@@ -161,6 +207,7 @@ def calculate_gap_count(disc_type_str):
     numbers = re.findall(r'\d+', disc_type_str)
     if not numbers: return 0
     num = int(numbers[0])
+    # 特殊逻辑：Z系列盘通常是两倍，但 12 和 16 例外？(根据原逻辑)
     if "Z" in disc_type_str:
         if num == 12: return 12
         elif num == 16: return 16
@@ -181,7 +228,7 @@ with st.sidebar:
     else:
         st.error("❌ 未连接到云端数据库")
         st.info("请检查 Secrets 配置")
-        st.stop() # 如果没连接，停止运行后续代码
+        st.stop() 
 
 # ==========================================
 # 3. 交互区域
@@ -189,7 +236,12 @@ with st.sidebar:
 st.title("📏 间隙测量数据记录系统")
 
 st.markdown("##### 1️⃣ 请选择扇叶大类")
-category_filter = st.radio("Series Filter", ["Z系列", "W系列", "G系列", "P系列"], horizontal=True, label_visibility="collapsed")
+category_filter = st.radio(
+    "Series Filter", 
+    ["Z系列", "W系列", "G系列", "EMAX系列", "P系列"], 
+    horizontal=True, 
+    label_visibility="collapsed"
+)
 
 if category_filter == "Z系列":
     current_fan_db = Z_SERIES_FANS
@@ -203,10 +255,15 @@ elif category_filter == "G系列":
     current_fan_db = G_SERIES_FANS
     current_default_disc_db = DISC_CONFIG_G
     series_hint = "G系列 (专用盘)"
+elif category_filter == "EMAX系列":
+    current_fan_db = EMAX_SERIES_FANS
+    current_default_disc_db = DISC_CONFIG_Z # EMAX 使用 Z 盘
+    series_hint = "EMAX系列 (使用 Z 盘)"
 elif category_filter == "P系列":
-    current_fan_db = P_SERIES_FANS
-    current_default_disc_db = DISC_CONFIG_P
-    series_hint = "P系列 (PMAX40)"
+    # P系列现在是混合的，先加载所有P扇叶
+    current_fan_db = {**P_SERIES_Z_USE, **P_SERIES_W_USE, **P_SERIES_ORIGINAL}
+    series_hint = "P系列 (自动匹配 Z盘/W盘/P盘)"
+    current_default_disc_db = DISC_CONFIG_P # 默认值，后面会变
 
 st.write("---")
 
@@ -218,6 +275,7 @@ with f2:
     fan_pn = current_fan_db[selected_fan_model]
     st.text_input("对应扇叶料号", value=fan_pn, disabled=True)
 
+# --- 智能盘库匹配逻辑 ---
 if category_filter == "W系列":
     if selected_fan_model in W_SERIES_YELLOW_KEYS:
         current_disc_db = DISC_CONFIG_W_YELLOW
@@ -225,6 +283,18 @@ if category_filter == "W系列":
     else:
         current_disc_db = DISC_CONFIG_W_OTHER
         db_type_hint = "W系列 (18种通用盘)"
+
+elif category_filter == "P系列":
+    # 核心修改：P系列根据扇叶型号决定用什么盘
+    if selected_fan_model in P_SERIES_Z_USE:
+        current_disc_db = DISC_CONFIG_Z
+        db_type_hint = "P系列 (配置为 Z 盘)"
+    elif selected_fan_model in P_SERIES_W_USE:
+        current_disc_db = DISC_CONFIG_W_OTHER
+        db_type_hint = "P系列 (配置为 W 盘)"
+    else:
+        current_disc_db = DISC_CONFIG_P
+        db_type_hint = "P系列 (配置为 PMAX40 盘)"
 else:
     current_disc_db = current_default_disc_db
     db_type_hint = series_hint
@@ -423,11 +493,9 @@ if is_connected:
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
         # B. 准备显示的数据 (计算原始行号)
-        # Google Sheet 第1行是表头，数据从第2行开始
-        # 所以 df 的 index 0 对应 Sheet row 2
         df_history["_original_row_index"] = df_history.index + 2
         
-        # 倒序显示，最新的在最上面 (但我们记录了原始行号，所以不怕乱)
+        # 倒序显示，最新的在最上面
         df_show = df_history[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         
         # C. 增加“删除”勾选列
@@ -442,7 +510,7 @@ if is_connected:
                     help="勾选后点击下方按钮删除",
                     default=False,
                 ),
-                "_original_row_index": None, # 隐藏行号列，不给用户看
+                "_original_row_index": None, # 隐藏行号列
                 "工单号": st.column_config.TextColumn(width="medium"),
                 "盘模具号": st.column_config.TextColumn("盘/Retaining模具号", width="medium"),
                 "Hub模具号": st.column_config.TextColumn(width="medium"),
@@ -451,34 +519,29 @@ if is_connected:
             },
             hide_index=True,
             use_container_width=True,
-            disabled=[c for c in df_show.columns if c != "删除?"] # 除了勾选框，其他都只读
+            disabled=[c for c in df_show.columns if c != "删除?"] # 只读
         )
 
         # E. 删除按钮逻辑
         col_del, col_dl = st.columns([1, 4])
         with col_del:
             if st.button("🗑️ 删除选中行", type="primary"):
-                # 1. 找出所有被勾选的行
                 rows_to_delete = edited_df[edited_df["删除?"] == True]
                 
                 if rows_to_delete.empty:
                     st.warning("请先勾选需要删除的数据！")
                 else:
                     try:
-                        # 2. 获取这些行的原始 Google Sheet 行号
-                        # 必须从大到小排序！否则删了第5行，第6行就变第5行了，再删第6行就会删错。
+                        # 必须从大到小排序删除
                         sheet_rows = sorted(rows_to_delete["_original_row_index"].tolist(), reverse=True)
                         
                         status_msg = st.empty()
                         status_msg.info("⏳ 正在删除...")
                         
-                        # 3. 循环删除
                         for row_idx in sheet_rows:
                             sheet.delete_rows(row_idx)
                         
                         st.success(f"✅ 成功删除 {len(sheet_rows)} 条数据！")
-                        
-                        # 4. 强制清除缓存并刷新
                         st.cache_data.clear()
                         time.sleep(1)
                         st.rerun()
@@ -488,8 +551,7 @@ if is_connected:
         
         with col_dl:
             # --- 下载按钮 ---
-            st.write("") # 占位对齐
-            # 将数据转换为 CSV 格式
+            st.write("") 
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
             
             st.download_button(

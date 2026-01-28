@@ -297,7 +297,7 @@ st.write("---")
 selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
 
 # ==========================================
-# 核心逻辑：云端计数检查 (修复版)
+# 核心逻辑：云端计数检查 (强壮模式)
 # ==========================================
 current_count = 0
 if is_connected:
@@ -316,7 +316,6 @@ if is_connected:
             target_config = selected_config_detail.strip()
             
             # --- 2. 角度特殊处理 (转数字比对) ---
-            # errors='coerce' 会把 "34.0" 或 "34" 都转成数字 34.0，无法转的变 NaN
             df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
             target_angle_val = float(selected_angle)
 
@@ -324,7 +323,6 @@ if is_connected:
                 (df_cloud["扇叶型号_clean"] == target_fan) &
                 (df_cloud["盘型号_clean"] == target_disc) &
                 (df_cloud["配置_clean"] == target_config) &
-                # 允许极小的误差 (解决 34 != 34.0 的问题)
                 (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
             ]
             current_count = len(match_df)
@@ -446,16 +444,17 @@ if submitted:
             st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 & 删除管理
+# 7. 历史记录 & 筛选 & 管理 (重构版)
 # ==========================================
 st.divider()
 if is_connected:
     st.subheader("📊 云端历史记录管理")
-    st.caption("勾选行首的框，然后点击下方红色按钮删除。")
     
+    # 1. 基础数据读取
     df_history = load_data(sheet)
     
     if not df_history.empty:
+        # A. 数据清洗
         data_cols = [col for col in df_history.columns if col.startswith("数据_")]
         try:
             data_cols.sort(key=lambda x: int(x.split('_')[1]))
@@ -473,36 +472,92 @@ if is_connected:
             "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", 
             "数据量", "最大值", "最小值", "平均值"
         ]
-        
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
+        # B. 核心步骤：记录原始行号 (删除操作必须依赖它)
         df_history["_original_row_index"] = df_history.index + 2
-        df_show = df_history[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         
-        df_show.insert(0, "删除?", False)
+        # --- 🔍 新增：筛选控制器区域 ---
+        with st.expander("🔍 点击展开筛选条件", expanded=True):
+            f_col1, f_col2, f_col3 = st.columns(3)
+            
+            with f_col1:
+                # 日期筛选
+                try:
+                    df_history["录入时间_dt"] = pd.to_datetime(df_history["录入时间"])
+                    min_date = df_history["录入时间_dt"].min().date()
+                    max_date = df_history["录入时间_dt"].max().date()
+                    date_range = st.date_input("📅 录入日期范围", [min_date, max_date])
+                except:
+                    date_range = []
+                    st.warning("日期格式解析失败，日期筛选暂不可用")
 
+            with f_col2:
+                # 型号筛选
+                unique_fans = sorted(df_history["扇叶型号"].astype(str).unique().tolist())
+                selected_fans = st.multiselect("🌀 扇叶型号筛选", unique_fans, placeholder="默认全选")
+
+            with f_col3:
+                # 关键词搜索
+                search_kw = st.text_input("🔍 关键词 (工单/模具号)", placeholder="输入字符...")
+
+        # --- C. 应用筛选逻辑 ---
+        df_filtered = df_history.copy()
+
+        # C1. 日期过滤
+        if len(date_range) == 2:
+            start_d, end_d = date_range
+            df_filtered = df_filtered[
+                (df_filtered["录入时间_dt"].dt.date >= start_d) & 
+                (df_filtered["录入时间_dt"].dt.date <= end_d)
+            ]
+        
+        # C2. 型号过滤
+        if selected_fans:
+            df_filtered = df_filtered[df_filtered["扇叶型号"].isin(selected_fans)]
+            
+        # C3. 关键词过滤
+        if search_kw:
+            # 在所有列中搜索
+            mask = df_filtered.astype(str).apply(lambda x: x.str.contains(search_kw, case=False, na=False)).any(axis=1)
+            df_filtered = df_filtered[mask]
+
+        # --- D. 准备显示数据 ---
+        # 倒序显示，并只保留需要的列
+        df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
+        
+        # 插入勾选框列
+        df_show.insert(0, "删除?", False)
+        
+        st.write(f"📊 共找到 **{len(df_show)}** 条记录")
+
+        # --- E. 渲染可编辑表格 ---
         edited_df = st.data_editor(
             df_show,
             column_config={
                 "删除?": st.column_config.CheckboxColumn(
                     "删除?",
-                    help="勾选后点击下方按钮删除",
+                    help="勾选后点击下方红色按钮删除",
                     default=False,
+                    width="small"
                 ),
-                "_original_row_index": None, 
+                "_original_row_index": None, # 隐藏核心索引
+                "录入时间_dt": None, # 隐藏辅助日期列
                 "工单号": st.column_config.TextColumn(width="medium"),
-                "盘模具号": st.column_config.TextColumn("盘/Retaining模具号", width="medium"),
-                "Hub模具号": st.column_config.TextColumn(width="medium"),
+                "扇叶型号": st.column_config.TextColumn(width="large"),
                 "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
                 "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
             },
             hide_index=True,
             use_container_width=True,
-            disabled=[c for c in df_show.columns if c != "删除?"] 
+            disabled=[c for c in df_show.columns if c != "删除?"] # 只读
         )
 
+        # --- F. 操作按钮区域 ---
         col_del, col_dl = st.columns([1, 4])
+        
         with col_del:
+            # 删除逻辑：基于筛选后的结果，寻找打钩的行，读取其隐藏的原始行号
             if st.button("🗑️ 删除选中行", type="primary"):
                 rows_to_delete = edited_df[edited_df["删除?"] == True]
                 
@@ -510,13 +565,16 @@ if is_connected:
                     st.warning("请先勾选需要删除的数据！")
                 else:
                     try:
+                        # 核心安全逻辑：必须按原始行号从大到小删
                         sheet_rows = sorted(rows_to_delete["_original_row_index"].tolist(), reverse=True)
+                        
                         status_msg = st.empty()
-                        status_msg.info("⏳ 正在删除...")
+                        status_msg.info(f"⏳ 正在删除 {len(sheet_rows)} 条数据...")
+                        
                         for row_idx in sheet_rows:
                             sheet.delete_rows(row_idx)
                         
-                        st.success(f"✅ 成功删除 {len(sheet_rows)} 条数据！")
+                        st.success(f"✅ 删除成功！")
                         st.cache_data.clear()
                         time.sleep(1)
                         st.rerun()
@@ -525,13 +583,15 @@ if is_connected:
                         st.error(f"❌ 删除失败: {e}")
         
         with col_dl:
-            st.write("") 
+            # 下载逻辑：下载当前看到的（筛选后的）表格
+            st.write("") # 占位
+            # 移除辅助列再下载
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
             
             st.download_button(
-                label="📥 下载 Excel (CSV)",
+                label="📥 导出当前列表 (Excel/CSV)",
                 data=csv,
-                file_name=f"间隙数据_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"间隙数据_筛选导出_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
 

@@ -56,10 +56,10 @@ def load_data(_sheet):
         return pd.DataFrame()
 
 # ==========================================
-# A. 扇叶型号数据库 (更新版)
+# A. 扇叶型号数据库 (最新版：含L/R拆分、EMAX、PMAX)
 # ==========================================
 
-# --- Z系列 (包含原来的 + 拆分 L/R 的) ---
+# --- Z系列 ---
 Z_SERIES_FANS = {
     # 原始单向或无需拆分的
     "1ZL/PAG/GREY Fan blade": "11100200027", "1ZL/PAGI Fan blade": "11100500027", "1ZR/PPG Fan blade": "11130100027",
@@ -82,25 +82,20 @@ Z_SERIES_FANS = {
     "TR7ZL/AL Fan Blade": "17170700078", "TR7ZR/AL Fan Blade": "17170700087",
 
     # --- 拆分 L/R 的 Z系列 ---
-    # 6Z 拆分
     "6ZL/PPG Fan blade": "16180100081", "6ZR/PPG Fan blade": "16180100081",
     "6ZL/PAG Fan blade": "16180200081", "6ZR/PAG Fan blade": "16180200081",
     "6ZL/PAG/BLACK Fan blade": "16181300081", "6ZR/PAG/BLACK Fan blade": "16181300081",
-    
-    # TR7Z/PPG 拆分
     "TR7ZL/PPG Fan blade": "17170100087", "TR7ZR/PPG Fan blade": "17170100087",
-    
-    # TR8Z/AL 拆分
     "TR8ZL/AL Fan Blade": "18170700094", "TR8ZR/AL Fan Blade": "18170700094"
 }
 
-# --- EMAX 系列 (新增, 使用 Z 盘) ---
+# --- EMAX 系列 (使用 Z 盘) ---
 EMAX_SERIES_FANS = {
     "EMAX 4L/PAG Fan Blade": "14400200059",
     "EMAX 4R/PAG Fan Blade": "14430200060"
 }
 
-# --- W系列 (更新 8W, TR11W 拆分) ---
+# --- W系列 ---
 W_SERIES_FANS = {
     # 原始
     "1WL/PPG/LP Fan Blade": "11700100084", "1WL/PAG/LP Fan blade": "11700200084", "1WL/PAGAS/LP Fan blade": "11700300084",
@@ -147,20 +142,14 @@ G_SERIES_FANS = {
     "10GR/PAG/BLACK Fan Blade": "11831300042"
 }
 
-# --- P系列 (混合：有的用Z盘，有的用W盘，有的用P盘) ---
-# 1. P系列 - 使用 Z 盘
+# --- P系列 (混合) ---
 P_SERIES_Z_USE = {
-    "PMAX4L/PAG/GREY Fan Blade": "14702400093",
-    "PMAX4R/PAG/GREY Fan Blade": "14732400094",
-    "PressureMAX 6L/PAG Fan Blade": "16900200079",
-    "PressureMAX 6R/PAG Fan Blade": "16930200074"
+    "PMAX4L/PAG/GREY Fan Blade": "14702400093", "PMAX4R/PAG/GREY Fan Blade": "14732400094",
+    "PressureMAX 6L/PAG Fan Blade": "16900200079", "PressureMAX 6R/PAG Fan Blade": "16930200074"
 }
-# 2. P系列 - 使用 W 盘
 P_SERIES_W_USE = {
-    "PMAX5L/PAG/BLACK Fan Blade": "15601300045",
-    "PMAX5R/PAG/BLACK Fan Blade": "15631300047"
+    "PMAX5L/PAG/BLACK Fan Blade": "15601300045", "PMAX5R/PAG/BLACK Fan Blade": "15631300047"
 }
-# 3. P系列 - 原始 (PMAX40)
 P_SERIES_ORIGINAL = {
     "PMAX3L/PAG/GREY Fan Blade": "13900200059", "PMAX3R/PAG/GREY Fan Blade": "13932400060"
 }
@@ -207,7 +196,6 @@ def calculate_gap_count(disc_type_str):
     numbers = re.findall(r'\d+', disc_type_str)
     if not numbers: return 0
     num = int(numbers[0])
-    # 特殊逻辑：Z系列盘通常是两倍，但 12 和 16 例外？(根据原逻辑)
     if "Z" in disc_type_str:
         if num == 12: return 12
         elif num == 16: return 16
@@ -257,13 +245,12 @@ elif category_filter == "G系列":
     series_hint = "G系列 (专用盘)"
 elif category_filter == "EMAX系列":
     current_fan_db = EMAX_SERIES_FANS
-    current_default_disc_db = DISC_CONFIG_Z # EMAX 使用 Z 盘
+    current_default_disc_db = DISC_CONFIG_Z 
     series_hint = "EMAX系列 (使用 Z 盘)"
 elif category_filter == "P系列":
-    # P系列现在是混合的，先加载所有P扇叶
     current_fan_db = {**P_SERIES_Z_USE, **P_SERIES_W_USE, **P_SERIES_ORIGINAL}
     series_hint = "P系列 (自动匹配 Z盘/W盘/P盘)"
-    current_default_disc_db = DISC_CONFIG_P # 默认值，后面会变
+    current_default_disc_db = DISC_CONFIG_P 
 
 st.write("---")
 
@@ -275,7 +262,7 @@ with f2:
     fan_pn = current_fan_db[selected_fan_model]
     st.text_input("对应扇叶料号", value=fan_pn, disabled=True)
 
-# --- 智能盘库匹配逻辑 ---
+# --- 智能盘库匹配 ---
 if category_filter == "W系列":
     if selected_fan_model in W_SERIES_YELLOW_KEYS:
         current_disc_db = DISC_CONFIG_W_YELLOW
@@ -283,9 +270,7 @@ if category_filter == "W系列":
     else:
         current_disc_db = DISC_CONFIG_W_OTHER
         db_type_hint = "W系列 (18种通用盘)"
-
 elif category_filter == "P系列":
-    # 核心修改：P系列根据扇叶型号决定用什么盘
     if selected_fan_model in P_SERIES_Z_USE:
         current_disc_db = DISC_CONFIG_Z
         db_type_hint = "P系列 (配置为 Z 盘)"
@@ -312,25 +297,35 @@ st.write("---")
 selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
 
 # ==========================================
-# 核心逻辑：云端计数检查
+# 核心逻辑：云端计数检查 (修复版)
 # ==========================================
 current_count = 0
 if is_connected:
-    # 注意：这里调用带缓存的 load_data，传入 sheet 对象
     df_cloud = load_data(sheet)
     if not df_cloud.empty:
         required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
-        # 确保列名存在
         if all(col in df_cloud.columns for col in required_cols):
-            # 类型转换，防止数字/字符串不匹配
-            df_cloud["角度"] = df_cloud["角度"].astype(str)
-            selected_angle_str = str(selected_angle)
             
+            # --- 1. 数据清洗 (去除首尾空格) ---
+            df_cloud["扇叶型号_clean"] = df_cloud["扇叶型号"].astype(str).str.strip()
+            df_cloud["盘型号_clean"] = df_cloud["盘型号"].astype(str).str.strip()
+            df_cloud["配置_clean"] = df_cloud["详细配置/料号"].astype(str).str.strip()
+            
+            target_fan = selected_fan_model.strip()
+            target_disc = selected_disc_type.strip()
+            target_config = selected_config_detail.strip()
+            
+            # --- 2. 角度特殊处理 (转数字比对) ---
+            # errors='coerce' 会把 "34.0" 或 "34" 都转成数字 34.0，无法转的变 NaN
+            df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
+            target_angle_val = float(selected_angle)
+
             match_df = df_cloud[
-                (df_cloud["扇叶型号"] == selected_fan_model) &
-                (df_cloud["盘型号"] == selected_disc_type) &
-                (df_cloud["角度"] == selected_angle_str) &
-                (df_cloud["详细配置/料号"] == selected_config_detail)
+                (df_cloud["扇叶型号_clean"] == target_fan) &
+                (df_cloud["盘型号_clean"] == target_disc) &
+                (df_cloud["配置_clean"] == target_config) &
+                # 允许极小的误差 (解决 34 != 34.0 的问题)
+                (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
             ]
             current_count = len(match_df)
 
@@ -400,7 +395,7 @@ with st.form("data_entry_form", clear_on_submit=True):
     submitted = st.form_submit_button(btn_label, type="primary", disabled=is_limit_reached)
 
 # ==========================================
-# 6. 保存逻辑 (云端追加)
+# 6. 保存逻辑
 # ==========================================
 if submitted:
     if current_count >= 3:
@@ -415,63 +410,52 @@ if submitted:
         val_min = min(vals_list) if vals_list else 0
         val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
 
-        # 构建完整的列顺序 (表头)
+        # 表头
         base_headers = [
             "录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
             "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", 
             "数据量", "最大值", "最小值", "平均值"
         ]
-        # 动态添加数据列头
-        max_possible_data_cols = 50 # 预留足够的列
+        max_possible_data_cols = 50 
         data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
         all_headers = base_headers + data_headers
 
-        # 构建本行数据
         row_data = [
             current_time_str, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle,
             blade_mold, plate_mold_1, plate_mold_2, start_pos, input_temp, input_humidity,
             data_points_count, val_max, val_min, val_avg
         ]
         
-        # 填充间隙数据
         for i in range(1, max_possible_data_cols + 1):
             if i <= data_points_count:
                 row_data.append(input_values.get(f"Pos_{i}", ""))
             else:
-                row_data.append("") # 填充空值保持对齐
+                row_data.append("") 
 
         try:
-            # 检查是否是空表，如果是，先写入表头
             first_row = sheet.row_values(1)
             if not first_row:
                 sheet.append_row(all_headers)
             
-            # 写入数据
             sheet.append_row(row_data)
-            
             st.success(f"✅ 云端保存成功！{current_time_str}")
-            
-            # 🚀 关键步骤：清除缓存，确保能立刻拉取到最新数据
             st.cache_data.clear()
-            
             time.sleep(1)
             st.rerun()
         except Exception as e:
             st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 & 删除管理 (云端读取)
+# 7. 历史记录 & 删除管理
 # ==========================================
 st.divider()
 if is_connected:
     st.subheader("📊 云端历史记录管理")
     st.caption("勾选行首的框，然后点击下方红色按钮删除。")
     
-    # 1. 读取数据
     df_history = load_data(sheet)
     
     if not df_history.empty:
-        # A. 数据清洗与列排序
         data_cols = [col for col in df_history.columns if col.startswith("数据_")]
         try:
             data_cols.sort(key=lambda x: int(x.split('_')[1]))
@@ -492,16 +476,11 @@ if is_connected:
         
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
-        # B. 准备显示的数据 (计算原始行号)
         df_history["_original_row_index"] = df_history.index + 2
-        
-        # 倒序显示，最新的在最上面
         df_show = df_history[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         
-        # C. 增加“删除”勾选列
         df_show.insert(0, "删除?", False)
 
-        # D. 显示可编辑表格
         edited_df = st.data_editor(
             df_show,
             column_config={
@@ -510,7 +489,7 @@ if is_connected:
                     help="勾选后点击下方按钮删除",
                     default=False,
                 ),
-                "_original_row_index": None, # 隐藏行号列
+                "_original_row_index": None, 
                 "工单号": st.column_config.TextColumn(width="medium"),
                 "盘模具号": st.column_config.TextColumn("盘/Retaining模具号", width="medium"),
                 "Hub模具号": st.column_config.TextColumn(width="medium"),
@@ -519,10 +498,9 @@ if is_connected:
             },
             hide_index=True,
             use_container_width=True,
-            disabled=[c for c in df_show.columns if c != "删除?"] # 只读
+            disabled=[c for c in df_show.columns if c != "删除?"] 
         )
 
-        # E. 删除按钮逻辑
         col_del, col_dl = st.columns([1, 4])
         with col_del:
             if st.button("🗑️ 删除选中行", type="primary"):
@@ -532,12 +510,9 @@ if is_connected:
                     st.warning("请先勾选需要删除的数据！")
                 else:
                     try:
-                        # 必须从大到小排序删除
                         sheet_rows = sorted(rows_to_delete["_original_row_index"].tolist(), reverse=True)
-                        
                         status_msg = st.empty()
                         status_msg.info("⏳ 正在删除...")
-                        
                         for row_idx in sheet_rows:
                             sheet.delete_rows(row_idx)
                         
@@ -550,7 +525,6 @@ if is_connected:
                         st.error(f"❌ 删除失败: {e}")
         
         with col_dl:
-            # --- 下载按钮 ---
             st.write("") 
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
             

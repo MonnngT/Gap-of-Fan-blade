@@ -371,27 +371,50 @@ if is_connected:
         
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
-        # --- E. 渲染可编辑表格 (修正：解开禁用列表) ---
+        # --- E. 动态构建 column_config (关键修复：确保所有列都被定义为可编辑) ---
+        
+        # 1. 基础列配置
+        my_column_config = {
+            "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
+            "_original_row_index": None, # 隐藏
+            "录入时间_dt": None, # 隐藏
+            "录入时间": st.column_config.TextColumn(disabled=True), # 锁定
+            # 其他文本列强制设为 TextColumn 以确保可编辑
+            "工单号": st.column_config.TextColumn(width="medium"),
+            "扇叶型号": st.column_config.TextColumn(width="large"),
+            "扇叶料号": st.column_config.TextColumn(),
+            "盘型号": st.column_config.TextColumn(),
+            "详细配置/料号": st.column_config.TextColumn(),
+            "叶片模具号": st.column_config.TextColumn(),
+            "盘模具号": st.column_config.TextColumn(),
+            "Hub模具号": st.column_config.TextColumn(),
+            "起始位置": st.column_config.TextColumn(),
+            # 数值列
+            "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
+            "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
+            "角度": st.column_config.NumberColumn(format="%.1f"),
+            "数据量": st.column_config.NumberColumn(disabled=True), # 数据量建议不改
+            "最大值": st.column_config.NumberColumn(disabled=True), # 统计值建议不改
+            "最小值": st.column_config.NumberColumn(disabled=True),
+            "平均值": st.column_config.NumberColumn(disabled=True),
+        }
+
+        # 2. 动态添加所有数据列 (确保数据_1, 数据_2... 能编辑)
+        for d_col in valid_data_cols:
+             # 设置为 NumberColumn 确保能输入数字，step=0.01 允许小数
+            my_column_config[d_col] = st.column_config.NumberColumn(required=False, step=0.01)
+
+        # --- 渲染表格 ---
         edited_df = st.data_editor(
             df_show,
-            column_config={
-                "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
-                "_original_row_index": None, # 隐藏核心索引
-                "录入时间_dt": None, 
-                "录入时间": st.column_config.TextColumn(disabled=True), # 锁定时间
-                "工单号": st.column_config.TextColumn(width="medium"),
-                "扇叶型号": st.column_config.TextColumn(width="large"),
-                "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
-                "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
-            },
+            column_config=my_column_config,
             hide_index=True,
             use_container_width=True,
-            disabled=["_original_row_index", "录入时间"], # 只禁用系统列，其他放开！
+            # 移除了 disabled 参数，改为在 column_config 里单独控制
             key="history_editor"
         )
 
-        # --- F. 操作按钮区域 (新增保存按钮) ---
-        # 检查是否有修改
+        # --- F. 操作按钮区域 ---
         has_edits = False
         if "history_editor" in st.session_state:
             edits = st.session_state["history_editor"].get("edited_rows", {})
@@ -399,7 +422,7 @@ if is_connected:
 
         col_save, col_del, col_dl = st.columns([1.5, 1.5, 3])
         
-        # 1. 保存修改逻辑
+        # 1. 保存修改
         with col_save:
             if has_edits:
                 if st.button("💾 保存修改", type="primary"):

@@ -310,7 +310,7 @@ if submitted:
         except Exception as e: st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 & 筛选 & 管理 (顶部筛选+可编辑版)
+# 7. 历史记录 & 筛选 & 管理 (修复崩溃版)
 # ==========================================
 st.divider()
 if is_connected:
@@ -333,7 +333,7 @@ if is_connected:
         base_cols = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
-        # B. 核心步骤：记录原始行号 (删除/修改操作必须依赖它)
+        # B. 核心步骤
         df_history["_original_row_index"] = df_history.index + 2
         
         # --- 🔍 筛选控制面板 ---
@@ -369,24 +369,24 @@ if is_connected:
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        # 🔥🔥🔥 关键修复：强制转换数值列，防止 StreamlitAPIException 🔥🔥🔥
-        numeric_cols = ["温度(°C)", "湿度(%)", "角度"] + valid_data_cols
-        for col in numeric_cols:
+        # 🔥🔥🔥 [重点修复]：把所有“被定义为数字列”的列，都强制转为数字格式 🔥🔥🔥
+        # 之前漏了“数据量”, “最大值”等统计列，导致报错
+        numeric_cols_to_clean = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"] + valid_data_cols
+        
+        for col in numeric_cols_to_clean:
             if col in df_show.columns:
+                # errors='coerce' 会把无法转换的文本变成 NaN，防止报错
                 df_show[col] = pd.to_numeric(df_show[col], errors='coerce')
         # 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
         # --- E. 动态构建 column_config ---
-        
-        # 1. 基础列配置
         my_column_config = {
             "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
             "_original_row_index": None, # 隐藏
             "录入时间_dt": None, # 隐藏
             "录入时间": st.column_config.TextColumn(disabled=True), # 锁定
-            # 文本列
             "工单号": st.column_config.TextColumn(width="medium"),
             "扇叶型号": st.column_config.TextColumn(width="large"),
             "扇叶料号": st.column_config.TextColumn(),

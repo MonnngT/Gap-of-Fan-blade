@@ -7,7 +7,7 @@ import re
 import time
 
 # ==========================================
-# 1. 基础配置 & 谷歌表格连接 (极速缓存版)
+# 1. 基础配置 & 谷歌表格连接
 # ==========================================
 st.set_page_config(page_title="扇叶间隙录入系统", page_icon="📏", layout="wide")
 
@@ -46,9 +46,8 @@ def load_data(_sheet):
         return pd.DataFrame()
 
 # ==========================================
-# A. 扇叶型号数据库 (完整版)
+# A. 扇叶型号数据库
 # ==========================================
-# (为了节省篇幅，这里使用您之前确认过的完整数据库)
 Z_SERIES_FANS = {
     "1ZL/PAG/GREY Fan blade": "11100200027", "1ZL/PAGI Fan blade": "11100500027", "1ZR/PPG Fan blade": "11130100027",
     "1ZR/PAG/GREY Fan blade": "11130200027", "1ZR/PAG/Black Fan blade": "11131300027", "2ZL/PPG Fan blade": "12100100027",
@@ -101,10 +100,7 @@ W_SERIES_YELLOW_KEYS = {
     "6WL/PAG/LP Fan blade", "6WL/PAGAS/LP Fan blade", "6WL/PAG/BLACK/LP Fan blade", "6WR/PPG/LP Fan blade", "6WR/PAG/LP Fan blade",
     "6WR/PAGAS/LP Fan blade", "7WL/PPG/LP Fan blade", "9W2L/PPG/LP Fan blade", "9W2L/PAG/LP Fan blade"
 }
-G_SERIES_FANS = {
-    "1GL/PPG Fan blade": "11710100089", "1GL/PAG/BLACK Fan blade": "11710200089", "10GL/PAG/BLACK Fan blade": "11801300088",
-    "10GR/PAG/BLACK Fan Blade": "11831300042"
-}
+G_SERIES_FANS = {"1GL/PPG Fan blade": "11710100089", "1GL/PAG/BLACK Fan blade": "11710200089", "10GL/PAG/BLACK Fan blade": "11801300088", "10GR/PAG/BLACK Fan Blade": "11831300042"}
 P_SERIES_Z_USE = {"PMAX4L/PAG/GREY Fan Blade": "14702400093", "PMAX4R/PAG/GREY Fan Blade": "14732400094", "PressureMAX 6L/PAG Fan Blade": "16900200079", "PressureMAX 6R/PAG Fan Blade": "16930200074"}
 P_SERIES_W_USE = {"PMAX5L/PAG/BLACK Fan Blade": "15601300045", "PMAX5R/PAG/BLACK Fan Blade": "15631300047"}
 P_SERIES_ORIGINAL = {"PMAX3L/PAG/GREY Fan Blade": "13900200059", "PMAX3R/PAG/GREY Fan Blade": "13932400060"}
@@ -314,7 +310,7 @@ if submitted:
         except Exception as e: st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 & 筛选 & 管理 (顶部筛选栏版)
+# 7. 历史记录 & 筛选 & 管理 (顶部筛选+可编辑版)
 # ==========================================
 st.divider()
 if is_connected:
@@ -337,16 +333,14 @@ if is_connected:
         base_cols = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
         final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
         
-        # B. 核心步骤：记录原始行号 (删除操作必须依赖它)
+        # B. 核心步骤：记录原始行号 (删除/修改操作必须依赖它)
         df_history["_original_row_index"] = df_history.index + 2
         
-        # --- 🔍 筛选控制面板 (位于表格正上方) ---
+        # --- 🔍 筛选控制面板 ---
         with st.container(border=True):
             st.markdown("##### 🔍 筛选条件")
             f_col1, f_col2, f_col3 = st.columns(3)
-            
             with f_col1:
-                # 日期筛选
                 try:
                     df_history["录入时间_dt"] = pd.to_datetime(df_history["录入时间"])
                     min_date = df_history["录入时间_dt"].min().date()
@@ -354,33 +348,19 @@ if is_connected:
                     date_range = st.date_input("📅 按录入日期筛选", [])
                 except:
                     date_range = []
-                    st.warning("⚠️ 日期格式解析失败，请检查表格数据")
-
+                    st.warning("⚠️ 日期格式解析失败")
             with f_col2:
-                # 型号筛选
                 unique_fans = sorted(df_history["扇叶型号"].astype(str).unique().tolist())
                 selected_fans = st.multiselect("🌀 按扇叶型号筛选", unique_fans, placeholder="默认显示所有")
-
             with f_col3:
-                # 关键词搜索
                 search_kw = st.text_input("🔍 关键词搜索 (工单/模具号/任意内容)", placeholder="例如：333525")
 
         # --- C. 应用筛选逻辑 ---
         df_filtered = df_history.copy()
-
-        # C1. 日期过滤
         if len(date_range) == 2:
             start_d, end_d = date_range
-            df_filtered = df_filtered[
-                (df_filtered["录入时间_dt"].dt.date >= start_d) & 
-                (df_filtered["录入时间_dt"].dt.date <= end_d)
-            ]
-        
-        # C2. 型号过滤
-        if selected_fans:
-            df_filtered = df_filtered[df_filtered["扇叶型号"].isin(selected_fans)]
-            
-        # C3. 关键词过滤
+            df_filtered = df_filtered[(df_filtered["录入时间_dt"].dt.date >= start_d) & (df_filtered["录入时间_dt"].dt.date <= end_d)]
+        if selected_fans: df_filtered = df_filtered[df_filtered["扇叶型号"].isin(selected_fans)]
         if search_kw:
             mask = df_filtered.astype(str).apply(lambda x: x.str.contains(search_kw, case=False, na=False)).any(axis=1)
             df_filtered = df_filtered[mask]
@@ -389,36 +369,72 @@ if is_connected:
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条")
+        st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
-        # --- E. 渲染可编辑表格 ---
+        # --- E. 渲染可编辑表格 (重点修改：允许编辑) ---
         edited_df = st.data_editor(
             df_show,
             column_config={
-                "删除?": st.column_config.CheckboxColumn(
-                    "删除?",
-                    help="勾选后点击下方红色按钮删除",
-                    default=False,
-                    width="small"
-                ),
+                "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
                 "_original_row_index": None, # 隐藏核心索引
                 "录入时间_dt": None, 
                 "工单号": st.column_config.TextColumn(width="medium"),
                 "扇叶型号": st.column_config.TextColumn(width="large"),
                 "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
                 "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
+                "录入时间": st.column_config.TextColumn(disabled=True), # 禁止修改时间
             },
             hide_index=True,
             use_container_width=True,
-            disabled=[c for c in df_show.columns if c != "删除?"] # 只读
+            disabled=["_original_row_index"], # 只禁止修改隐藏行号，其他允许编辑
+            key="history_editor" # 绑定 Session State Key
         )
 
-        # --- F. 操作按钮区域 ---
-        col_del, col_dl = st.columns([1, 4])
+        # --- F. 操作按钮区域 (新增保存按钮) ---
+        # 检查是否有修改
+        has_edits = False
+        if "history_editor" in st.session_state:
+            edits = st.session_state["history_editor"].get("edited_rows", {})
+            if edits: has_edits = True
+
+        col_save, col_del, col_dl = st.columns([1.5, 1.5, 3])
         
+        # 1. 保存修改逻辑
+        with col_save:
+            if has_edits:
+                if st.button("💾 保存修改", type="primary"):
+                    try:
+                        # 获取表头映射 (列名 -> 索引)
+                        header_list = sheet.row_values(1)
+                        header_map = {name: i+1 for i, name in enumerate(header_list)}
+                        
+                        status_msg = st.empty()
+                        status_msg.info("⏳ 正在保存修改...")
+                        
+                        # 遍历修改内容
+                        edited_rows = st.session_state["history_editor"]["edited_rows"]
+                        for row_idx_in_display, changes in edited_rows.items():
+                            # 获取真实的 Google Sheet 行号
+                            # 注意：edited_df 是显示的数据框，row_idx_in_display 是它在当前页面的索引
+                            real_sheet_row = df_show.iloc[row_idx_in_display]["_original_row_index"]
+                            
+                            for col_name, new_value in changes.items():
+                                if col_name in header_map:
+                                    col_idx = header_map[col_name]
+                                    sheet.update_cell(real_sheet_row, col_idx, new_value)
+                        
+                        st.success("✅ 修改已保存！")
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 保存失败: {e}")
+            else:
+                st.button("💾 保存修改", disabled=True, help="请先在表格中修改数据")
+
+        # 2. 删除逻辑
         with col_del:
-            # 删除逻辑
-            if st.button("🗑️ 删除选中行", type="primary"):
+            if st.button("🗑️ 删除选中行"):
                 rows_to_delete = edited_df[edited_df["删除?"] == True]
                 if rows_to_delete.empty:
                     st.warning("请先勾选需要删除的数据！")
@@ -434,8 +450,8 @@ if is_connected:
                         st.rerun()
                     except Exception as e: st.error(f"❌ 删除失败: {e}")
         
+        # 3. 下载逻辑
         with col_dl:
-            # 下载逻辑
             st.write("") 
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
             st.download_button(

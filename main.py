@@ -371,23 +371,23 @@ if is_connected:
         
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
-        # --- E. 渲染可编辑表格 (重点修改：允许编辑) ---
+        # --- E. 渲染可编辑表格 (修正：解开禁用列表) ---
         edited_df = st.data_editor(
             df_show,
             column_config={
                 "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
                 "_original_row_index": None, # 隐藏核心索引
                 "录入时间_dt": None, 
+                "录入时间": st.column_config.TextColumn(disabled=True), # 锁定时间
                 "工单号": st.column_config.TextColumn(width="medium"),
                 "扇叶型号": st.column_config.TextColumn(width="large"),
                 "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
                 "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
-                "录入时间": st.column_config.TextColumn(disabled=True), # 禁止修改时间
             },
             hide_index=True,
             use_container_width=True,
-            disabled=["_original_row_index"], # 只禁止修改隐藏行号，其他允许编辑
-            key="history_editor" # 绑定 Session State Key
+            disabled=["_original_row_index", "录入时间"], # 只禁用系统列，其他放开！
+            key="history_editor"
         )
 
         # --- F. 操作按钮区域 (新增保存按钮) ---
@@ -404,20 +404,14 @@ if is_connected:
             if has_edits:
                 if st.button("💾 保存修改", type="primary"):
                     try:
-                        # 获取表头映射 (列名 -> 索引)
                         header_list = sheet.row_values(1)
                         header_map = {name: i+1 for i, name in enumerate(header_list)}
-                        
                         status_msg = st.empty()
                         status_msg.info("⏳ 正在保存修改...")
                         
-                        # 遍历修改内容
                         edited_rows = st.session_state["history_editor"]["edited_rows"]
                         for row_idx_in_display, changes in edited_rows.items():
-                            # 获取真实的 Google Sheet 行号
-                            # 注意：edited_df 是显示的数据框，row_idx_in_display 是它在当前页面的索引
                             real_sheet_row = df_show.iloc[row_idx_in_display]["_original_row_index"]
-                            
                             for col_name, new_value in changes.items():
                                 if col_name in header_map:
                                     col_idx = header_map[col_name]

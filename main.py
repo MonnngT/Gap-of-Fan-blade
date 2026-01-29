@@ -369,14 +369,27 @@ if is_connected:
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        # 🔥🔥🔥 [重点修复]：把所有“被定义为数字列”的列，都强制转为数字格式 🔥🔥🔥
-        # 之前漏了“数据量”, “最大值”等统计列，导致报错
-        numeric_cols_to_clean = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"] + valid_data_cols
-        
-        for col in numeric_cols_to_clean:
-            if col in df_show.columns:
-                # errors='coerce' 会把无法转换的文本变成 NaN，防止报错
-                df_show[col] = pd.to_numeric(df_show[col], errors='coerce')
+        # 🔥🔥🔥 [重点修复 v8.3]：无差别清洗，确保类型匹配 🔥🔥🔥
+        # 1. 定义哪些列绝对是数字
+        numeric_cols_def = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"]
+        # 动态添加所有 "数据_X" 列到数字定义中
+        for c in df_show.columns:
+            if c.startswith("数据_"):
+                numeric_cols_def.append(c)
+
+        # 2. 遍历所有显示列，强制转换类型
+        for col in df_show.columns:
+            if col in ["删除?", "_original_row_index", "录入时间_dt"]:
+                continue # 跳过辅助列
+
+            if col in numeric_cols_def:
+                # 强制转数字 (错误变NaN) -> 强制转浮点类型
+                df_show[col] = pd.to_numeric(df_show[col], errors='coerce').astype("float64")
+            else:
+                # 强制转字符串 (防止 int/str 混合被识别为 object 导致 TextColumn 报错)
+                df_show[col] = df_show[col].astype(str)
+                # 将 "nan", "None" 等字符串清理回空字符串
+                df_show[col] = df_show[col].replace(["nan", "None", "<NA>"], "")
         # 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")

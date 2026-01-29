@@ -369,9 +369,16 @@ if is_connected:
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
+        # 🔥🔥🔥 关键修复：强制转换数值列，防止 StreamlitAPIException 🔥🔥🔥
+        numeric_cols = ["温度(°C)", "湿度(%)", "角度"] + valid_data_cols
+        for col in numeric_cols:
+            if col in df_show.columns:
+                df_show[col] = pd.to_numeric(df_show[col], errors='coerce')
+        # 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
-        # --- E. 动态构建 column_config (关键修复：确保所有列都被定义为可编辑) ---
+        # --- E. 动态构建 column_config ---
         
         # 1. 基础列配置
         my_column_config = {
@@ -379,7 +386,7 @@ if is_connected:
             "_original_row_index": None, # 隐藏
             "录入时间_dt": None, # 隐藏
             "录入时间": st.column_config.TextColumn(disabled=True), # 锁定
-            # 其他文本列强制设为 TextColumn 以确保可编辑
+            # 文本列
             "工单号": st.column_config.TextColumn(width="medium"),
             "扇叶型号": st.column_config.TextColumn(width="large"),
             "扇叶料号": st.column_config.TextColumn(),
@@ -389,19 +396,18 @@ if is_connected:
             "盘模具号": st.column_config.TextColumn(),
             "Hub模具号": st.column_config.TextColumn(),
             "起始位置": st.column_config.TextColumn(),
-            # 数值列
-            "温度(°C)": st.column_config.NumberColumn(format="%.1f"),
-            "湿度(%)": st.column_config.NumberColumn(format="%d%%"),
-            "角度": st.column_config.NumberColumn(format="%.1f"),
-            "数据量": st.column_config.NumberColumn(disabled=True), # 数据量建议不改
-            "最大值": st.column_config.NumberColumn(disabled=True), # 统计值建议不改
+            # 数值列 (强制转成 NumberColumn 才能编辑数字)
+            "温度(°C)": st.column_config.NumberColumn(format="%.1f", step=0.1),
+            "湿度(%)": st.column_config.NumberColumn(format="%d%%", step=1),
+            "角度": st.column_config.NumberColumn(format="%.1f", step=0.1),
+            "数据量": st.column_config.NumberColumn(disabled=True),
+            "最大值": st.column_config.NumberColumn(disabled=True),
             "最小值": st.column_config.NumberColumn(disabled=True),
             "平均值": st.column_config.NumberColumn(disabled=True),
         }
 
-        # 2. 动态添加所有数据列 (确保数据_1, 数据_2... 能编辑)
+        # 2. 动态添加所有数据列
         for d_col in valid_data_cols:
-             # 设置为 NumberColumn 确保能输入数字，step=0.01 允许小数
             my_column_config[d_col] = st.column_config.NumberColumn(required=False, step=0.01)
 
         # --- 渲染表格 ---
@@ -410,7 +416,6 @@ if is_connected:
             column_config=my_column_config,
             hide_index=True,
             use_container_width=True,
-            # 移除了 disabled 参数，改为在 column_config 里单独控制
             key="history_editor"
         )
 

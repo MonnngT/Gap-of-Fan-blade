@@ -151,6 +151,7 @@ def calculate_gap_count(disc_type_str):
 # ==========================================
 sheet = get_google_sheet()
 is_connected = sheet is not None
+
 with st.sidebar:
     st.header("⚙️ 系统状态")
     if is_connected:
@@ -159,6 +160,17 @@ with st.sidebar:
         st.error("❌ 未连接到云端数据库")
         st.info("请检查 Secrets 配置")
         st.stop() 
+
+# ==========================================
+# 云端数据结构保护检查
+# ==========================================
+df_cloud = pd.DataFrame()
+if is_connected:
+    df_cloud = load_data(sheet)
+    if not df_cloud.empty and "扇叶是否混模" not in df_cloud.columns:
+        st.error("🚨 **数据库结构升级提示：**")
+        st.warning("检测到您的 Google 表格缺少新增的【扇叶是否混模】列。为了防止新旧数据错位，**请立即前往您的 Google Sheets**，在【起始位置】和【温度(°C)】两列之间，**手动插入一列，并把表头命名为“扇叶是否混模”**。添加完成后，请点击右上角 ⋮ -> Clear cache 并刷新本页面。")
+        st.stop()
 
 # ==========================================
 # 3. 交互区域
@@ -210,26 +222,24 @@ st.write("---")
 selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
 
 # ==========================================
-# 核心逻辑：云端计数检查 (强壮模式)
+# 核心逻辑：云端计数检查
 # ==========================================
 current_count = 0
-if is_connected:
-    df_cloud = load_data(sheet)
-    if not df_cloud.empty:
-        required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
-        if all(col in df_cloud.columns for col in required_cols):
-            df_cloud["扇叶型号_clean"] = df_cloud["扇叶型号"].astype(str).str.strip()
-            df_cloud["盘型号_clean"] = df_cloud["盘型号"].astype(str).str.strip()
-            df_cloud["配置_clean"] = df_cloud["详细配置/料号"].astype(str).str.strip()
-            
-            target_fan = selected_fan_model.strip(); target_disc = selected_disc_type.strip(); target_config = selected_config_detail.strip()
-            df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
-            target_angle_val = float(selected_angle)
-            match_df = df_cloud[
-                (df_cloud["扇叶型号_clean"] == target_fan) & (df_cloud["盘型号_clean"] == target_disc) &
-                (df_cloud["配置_clean"] == target_config) & (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
-            ]
-            current_count = len(match_df)
+if is_connected and not df_cloud.empty:
+    required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
+    if all(col in df_cloud.columns for col in required_cols):
+        df_cloud["扇叶型号_clean"] = df_cloud["扇叶型号"].astype(str).str.strip()
+        df_cloud["盘型号_clean"] = df_cloud["盘型号"].astype(str).str.strip()
+        df_cloud["配置_clean"] = df_cloud["详细配置/料号"].astype(str).str.strip()
+        
+        target_fan = selected_fan_model.strip(); target_disc = selected_disc_type.strip(); target_config = selected_config_detail.strip()
+        df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
+        target_angle_val = float(selected_angle)
+        match_df = df_cloud[
+            (df_cloud["扇叶型号_clean"] == target_fan) & (df_cloud["盘型号_clean"] == target_disc) &
+            (df_cloud["配置_clean"] == target_config) & (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
+        ]
+        current_count = len(match_df)
 
 is_limit_reached = current_count >= 3
 if is_limit_reached: st.error(f"⚠️ **已达上限！** 该组合已录入 **{current_count}/3** 次。")
@@ -254,10 +264,12 @@ else:
     with m_col3: plate_mold_1 = st.text_input("盘模具号 (共用)", placeholder="输入模号...")
     plate_mold_2 = None
 st.write("") 
-e1, e2, e3 = st.columns(3)
+
+e1, e2, e3, e4 = st.columns(4)
 with e1: start_pos = st.selectbox("起始位置说明", ["有刻字", "无刻字"])
-with e2: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
-with e3: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
+with e2: is_mixed_mold = st.selectbox("扇叶是否混模", ["否", "是"]) # 已修改名称
+with e3: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
+with e4: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
 
 # ==========================================
 # 5. 数据录入表单
@@ -291,11 +303,22 @@ if submitted:
         val_max = max(vals_list) if vals_list else 0
         val_min = min(vals_list) if vals_list else 0
         val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
-        base_headers = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
+        
+        base_headers = [
+            "录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
+            "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
+            "数据量", "最大值", "最小值", "平均值"
+        ]
         max_possible_data_cols = 50 
         data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
         all_headers = base_headers + data_headers
-        row_data = [current_time_str, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, blade_mold, plate_mold_1, plate_mold_2, start_pos, input_temp, input_humidity, data_points_count, val_max, val_min, val_avg]
+        
+        row_data = [
+            current_time_str, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
+            blade_mold, plate_mold_1, plate_mold_2, start_pos, is_mixed_mold, input_temp, input_humidity, 
+            data_points_count, val_max, val_min, val_avg
+        ]
+        
         for i in range(1, max_possible_data_cols + 1):
             if i <= data_points_count: row_data.append(input_values.get(f"Pos_{i}", ""))
             else: row_data.append("") 
@@ -310,31 +333,28 @@ if submitted:
         except Exception as e: st.error(f"❌ 云端保存失败: {e}")
 
 # ==========================================
-# 7. 历史记录 & 筛选 & 管理 (修复崩溃版)
+# 7. 历史记录 & 筛选 & 管理
 # ==========================================
 st.divider()
 if is_connected:
     st.subheader("📊 云端历史记录管理")
     
-    # 1. 基础数据读取
-    df_history = load_data(sheet)
-    
-    if not df_history.empty:
+    if not df_cloud.empty:
         # A. 数据清洗
-        data_cols = [col for col in df_history.columns if col.startswith("数据_")]
+        data_cols = [col for col in df_cloud.columns if col.startswith("数据_")]
         try: data_cols.sort(key=lambda x: int(x.split('_')[1]))
         except: pass 
         
         valid_data_cols = []
         for col in data_cols:
-            temp_col = df_history[col].replace("", pd.NA)
+            temp_col = df_cloud[col].replace("", pd.NA)
             if not temp_col.dropna().empty: valid_data_cols.append(col)
 
-        base_cols = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
-        final_cols = [c for c in base_cols if c in df_history.columns] + valid_data_cols
+        base_cols = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
+        final_cols = [c for c in base_cols if c in df_cloud.columns] + valid_data_cols
         
         # B. 核心步骤
-        df_history["_original_row_index"] = df_history.index + 2
+        df_cloud["_original_row_index"] = df_cloud.index + 2
         
         # --- 🔍 筛选控制面板 ---
         with st.container(border=True):
@@ -342,21 +362,21 @@ if is_connected:
             f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
                 try:
-                    df_history["录入时间_dt"] = pd.to_datetime(df_history["录入时间"])
-                    min_date = df_history["录入时间_dt"].min().date()
-                    max_date = df_history["录入时间_dt"].max().date()
+                    df_cloud["录入时间_dt"] = pd.to_datetime(df_cloud["录入时间"])
+                    min_date = df_cloud["录入时间_dt"].min().date()
+                    max_date = df_cloud["录入时间_dt"].max().date()
                     date_range = st.date_input("📅 按录入日期筛选", [])
                 except:
                     date_range = []
                     st.warning("⚠️ 日期格式解析失败")
             with f_col2:
-                unique_fans = sorted(df_history["扇叶型号"].astype(str).unique().tolist())
+                unique_fans = sorted(df_cloud["扇叶型号"].astype(str).unique().tolist())
                 selected_fans = st.multiselect("🌀 按扇叶型号筛选", unique_fans, placeholder="默认显示所有")
             with f_col3:
                 search_kw = st.text_input("🔍 关键词搜索 (工单/模具号/任意内容)", placeholder="例如：333525")
 
         # --- C. 应用筛选逻辑 ---
-        df_filtered = df_history.copy()
+        df_filtered = df_cloud.copy()
         if len(date_range) == 2:
             start_d, end_d = date_range
             df_filtered = df_filtered[(df_filtered["录入时间_dt"].dt.date >= start_d) & (df_filtered["录入时间_dt"].dt.date <= end_d)]
@@ -369,37 +389,27 @@ if is_connected:
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        # 🔥🔥🔥 [重点修复 v8.3]：无差别清洗，确保类型匹配 🔥🔥🔥
-        # 1. 定义哪些列绝对是数字
         numeric_cols_def = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"]
-        # 动态添加所有 "数据_X" 列到数字定义中
         for c in df_show.columns:
-            if c.startswith("数据_"):
-                numeric_cols_def.append(c)
+            if c.startswith("数据_"): numeric_cols_def.append(c)
 
-        # 2. 遍历所有显示列，强制转换类型
         for col in df_show.columns:
             if col in ["删除?", "_original_row_index", "录入时间_dt"]:
-                continue # 跳过辅助列
-
+                continue 
             if col in numeric_cols_def:
-                # 强制转数字 (错误变NaN) -> 强制转浮点类型
                 df_show[col] = pd.to_numeric(df_show[col], errors='coerce').astype("float64")
             else:
-                # 强制转字符串 (防止 int/str 混合被识别为 object 导致 TextColumn 报错)
                 df_show[col] = df_show[col].astype(str)
-                # 将 "nan", "None" 等字符串清理回空字符串
                 df_show[col] = df_show[col].replace(["nan", "None", "<NA>"], "")
-        # 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
         # --- E. 动态构建 column_config ---
         my_column_config = {
             "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
-            "_original_row_index": None, # 隐藏
-            "录入时间_dt": None, # 隐藏
-            "录入时间": st.column_config.TextColumn(disabled=True), # 锁定
+            "_original_row_index": None, 
+            "录入时间_dt": None, 
+            "录入时间": st.column_config.TextColumn(disabled=True), 
             "工单号": st.column_config.TextColumn(width="medium"),
             "扇叶型号": st.column_config.TextColumn(width="large"),
             "扇叶料号": st.column_config.TextColumn(),
@@ -409,7 +419,7 @@ if is_connected:
             "盘模具号": st.column_config.TextColumn(),
             "Hub模具号": st.column_config.TextColumn(),
             "起始位置": st.column_config.TextColumn(),
-            # 数值列 (强制转成 NumberColumn 才能编辑数字)
+            "扇叶是否混模": st.column_config.SelectboxColumn("扇叶是否混模", options=["是", "否"]), # 已修改名称
             "温度(°C)": st.column_config.NumberColumn(format="%.1f", step=0.1),
             "湿度(%)": st.column_config.NumberColumn(format="%d%%", step=1),
             "角度": st.column_config.NumberColumn(format="%.1f", step=0.1),
@@ -419,11 +429,9 @@ if is_connected:
             "平均值": st.column_config.NumberColumn(disabled=True),
         }
 
-        # 2. 动态添加所有数据列
         for d_col in valid_data_cols:
             my_column_config[d_col] = st.column_config.NumberColumn(required=False, step=0.01)
 
-        # --- 渲染表格 ---
         edited_df = st.data_editor(
             df_show,
             column_config=my_column_config,
@@ -440,7 +448,6 @@ if is_connected:
 
         col_save, col_del, col_dl = st.columns([1.5, 1.5, 3])
         
-        # 1. 保存修改
         with col_save:
             if has_edits:
                 if st.button("💾 保存修改", type="primary"):
@@ -467,7 +474,6 @@ if is_connected:
             else:
                 st.button("💾 保存修改", disabled=True, help="请先在表格中修改数据")
 
-        # 2. 删除逻辑
         with col_del:
             if st.button("🗑️ 删除选中行"):
                 rows_to_delete = edited_df[edited_df["删除?"] == True]
@@ -485,7 +491,6 @@ if is_connected:
                         st.rerun()
                     except Exception as e: st.error(f"❌ 删除失败: {e}")
         
-        # 3. 下载逻辑
         with col_dl:
             st.write("") 
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')

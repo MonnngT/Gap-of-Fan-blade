@@ -110,7 +110,17 @@ ALL_FANS_DB = {**Z_SERIES_FANS, **EMAX_SERIES_FANS, **W_SERIES_FANS, **G_SERIES_
 # B. 盘配置数据库
 # ==========================================
 DISC_CONFIG_Z = {
-    "Z5盘": ["Retaining plate/5 (PN: 21050700103) X2", "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050700603)", "Retaining plate/5 + Hub plate/5/000010 (Ret:21050700103, Hub:21050702503)", "Retaining plate/5 + Hub plate/5/424412 (Ret:21050700103, Hub:21050702603)", "Retaining plate/5 + Hub plate/5/625212 (Ret:21050700103, Hub:21050704403)", "Retaining plate/5 + Hub plate/5/625223 (Ret:21050700103, Hub:21050708503)", "Retaining plate/5 + Hub Plate/5/825215 (Ret:21050700103, Hub:21050709403)"],
+    # Z5盘 新增了配置
+    "Z5盘": [
+        "Retaining plate/5 (PN: 21050700103) X2", 
+        "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050700603)", 
+        "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050702503)", # <--- 新增的组合
+        "Retaining plate/5 + Hub plate/5/000010 (Ret:21050700103, Hub:21050702503)", 
+        "Retaining plate/5 + Hub plate/5/424412 (Ret:21050700103, Hub:21050702603)", 
+        "Retaining plate/5 + Hub plate/5/625212 (Ret:21050700103, Hub:21050704403)", 
+        "Retaining plate/5 + Hub plate/5/625223 (Ret:21050700103, Hub:21050708503)", 
+        "Retaining plate/5 + Hub Plate/5/825215 (Ret:21050700103, Hub:21050709403)"
+    ],
     "Z6盘": ["Retaining plate/6 + Hub plate/6/000015 (Ret:21060702406, Hub:21060702506)", "Retaining plate/6/000075 (PN: 21060708106) X2"],
     "Z6L盘": ["Retaining plate/6L + Hub Plate/6L/000075 (Ret:21060709211, Hub:21060708111)", "Retaining plate/6L + Hub Plate/6L/000015 (Ret:21060709211, Hub:21060709311)"],
     "Z7盘": ["Retaining plate/7/100 + Hub Plate/7/000015/100 (Ret:21070702806, Hub:21070703006)", "Retaining plate/7/000075 (PN: 21070708109) X2"],
@@ -162,15 +172,21 @@ with st.sidebar:
         st.stop() 
 
 # ==========================================
-# 云端数据结构保护检查
+# 云端数据结构保护检查 (新增了测量时间的检查)
 # ==========================================
 df_cloud = pd.DataFrame()
 if is_connected:
     df_cloud = load_data(sheet)
-    if not df_cloud.empty and "扇叶是否混模" not in df_cloud.columns:
-        st.error("🚨 **数据库结构升级提示：**")
-        st.warning("检测到您的 Google 表格缺少新增的【扇叶是否混模】列。为了防止新旧数据错位，**请立即前往您的 Google Sheets**，在【起始位置】和【温度(°C)】两列之间，**手动插入一列，并把表头命名为“扇叶是否混模”**。添加完成后，请点击右上角 ⋮ -> Clear cache 并刷新本页面。")
-        st.stop()
+    if not df_cloud.empty:
+        missing_cols = []
+        if "扇叶是否混模" not in df_cloud.columns: missing_cols.append("扇叶是否混模")
+        if "测量时间" not in df_cloud.columns: missing_cols.append("测量时间")
+        
+        if missing_cols:
+            st.error("🚨 **数据库结构升级提示：**")
+            st.warning(f"检测到您的 Google 表格缺少新增的列：**{'、'.join(missing_cols)}**。")
+            st.info("为了防止数据错位，**请立即前往 Google Sheets 手动插入新列：**\n\n1. 将【测量时间】加在【录入时间】和【工单号】之间。\n2. 将【扇叶是否混模】加在【起始位置】和【温度(°C)】之间。\n\n添加完成后，请点击右上角 ⋮ -> Clear cache 并刷新本页面。")
+            st.stop()
 
 # ==========================================
 # 3. 交互区域
@@ -251,23 +267,34 @@ has_hub = "hub" in selected_config_detail.lower()
 # 4. 模具与环境信息录入
 # ==========================================
 st.write("---")
+
+# --- 获取当前时间作为测量时间默认值 ---
+utc_now = datetime.now(timezone.utc)
+beijing_now = utc_now.astimezone(timezone(timedelta(hours=8)))
+default_measure_time = beijing_now.strftime("%Y-%m-%d %H:%M")
+
+t_col1, t_col2 = st.columns(2)
+with t_col1: 
+    measure_time = st.text_input("⏱️ 测量时间", value=default_measure_time, help="默认当前时间，可按需手动修改")
+with t_col2: 
+    work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
+
+st.write("")
 if has_hub:
-    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    with m_col1: work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
+    m_col2, m_col3, m_col4 = st.columns(3)
     with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
     with m_col3: plate_mold_1 = st.text_input("Retaining盘模具号", placeholder="输入模号...")
     with m_col4: plate_mold_2 = st.text_input("Hub盘模具号", placeholder="输入模号...")
 else:
-    m_col1, m_col2, m_col3 = st.columns(3)
-    with m_col1: work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
+    m_col2, m_col3 = st.columns(2)
     with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
     with m_col3: plate_mold_1 = st.text_input("盘模具号 (共用)", placeholder="输入模号...")
     plate_mold_2 = None
-st.write("") 
 
+st.write("") 
 e1, e2, e3, e4 = st.columns(4)
 with e1: start_pos = st.selectbox("起始位置说明", ["有刻字", "无刻字"])
-with e2: is_mixed_mold = st.selectbox("扇叶是否混模", ["否", "是"]) # 已修改名称
+with e2: is_mixed_mold = st.selectbox("扇叶是否混模", ["否", "是"])
 with e3: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
 with e4: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
 
@@ -296,16 +323,17 @@ with st.form("data_entry_form", clear_on_submit=True):
 if submitted:
     if current_count >= 3: st.error("❌ 提交被拒绝：已达上限。")
     else:
-        utc_now = datetime.now(timezone.utc)
-        beijing_now = utc_now.astimezone(timezone(timedelta(hours=8)))
-        current_time_str = beijing_now.strftime("%Y-%m-%d %H:%M:%S")
+        # 录入时间 (系统生成，不可更改)
+        current_sys_time_str = beijing_now.strftime("%Y-%m-%d %H:%M:%S")
+        
         vals_list = [v for k, v in input_values.items() if v is not None]
         val_max = max(vals_list) if vals_list else 0
         val_min = min(vals_list) if vals_list else 0
         val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
         
+        # --- 更新 base_headers，加入了 测量时间 ---
         base_headers = [
-            "录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
+            "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
             "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
             "数据量", "最大值", "最小值", "平均值"
         ]
@@ -313,8 +341,9 @@ if submitted:
         data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
         all_headers = base_headers + data_headers
         
+        # --- 数据中加入了 measure_time ---
         row_data = [
-            current_time_str, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
+            current_sys_time_str, measure_time, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
             blade_mold, plate_mold_1, plate_mold_2, start_pos, is_mixed_mold, input_temp, input_humidity, 
             data_points_count, val_max, val_min, val_avg
         ]
@@ -326,7 +355,7 @@ if submitted:
             first_row = sheet.row_values(1)
             if not first_row: sheet.append_row(all_headers)
             sheet.append_row(row_data)
-            st.success(f"✅ 云端保存成功！{current_time_str}")
+            st.success(f"✅ 云端保存成功！{current_sys_time_str}")
             st.cache_data.clear()
             time.sleep(1)
             st.rerun()
@@ -350,7 +379,12 @@ if is_connected:
             temp_col = df_cloud[col].replace("", pd.NA)
             if not temp_col.dropna().empty: valid_data_cols.append(col)
 
-        base_cols = ["录入时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
+        # --- 历史数据列加入了 测量时间 ---
+        base_cols = [
+            "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
+            "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
+            "数据量", "最大值", "最小值", "平均值"
+        ]
         final_cols = [c for c in base_cols if c in df_cloud.columns] + valid_data_cols
         
         # B. 核心步骤
@@ -410,6 +444,7 @@ if is_connected:
             "_original_row_index": None, 
             "录入时间_dt": None, 
             "录入时间": st.column_config.TextColumn(disabled=True), 
+            "测量时间": st.column_config.TextColumn(width="medium"), # 支持双击修改的测量时间
             "工单号": st.column_config.TextColumn(width="medium"),
             "扇叶型号": st.column_config.TextColumn(width="large"),
             "扇叶料号": st.column_config.TextColumn(),
@@ -419,7 +454,7 @@ if is_connected:
             "盘模具号": st.column_config.TextColumn(),
             "Hub模具号": st.column_config.TextColumn(),
             "起始位置": st.column_config.TextColumn(),
-            "扇叶是否混模": st.column_config.SelectboxColumn("扇叶是否混模", options=["是", "否"]), # 已修改名称
+            "扇叶是否混模": st.column_config.SelectboxColumn("扇叶是否混模", options=["是", "否"]),
             "温度(°C)": st.column_config.NumberColumn(format="%.1f", step=0.1),
             "湿度(%)": st.column_config.NumberColumn(format="%d%%", step=1),
             "角度": st.column_config.NumberColumn(format="%.1f", step=0.1),

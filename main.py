@@ -110,11 +110,10 @@ ALL_FANS_DB = {**Z_SERIES_FANS, **EMAX_SERIES_FANS, **W_SERIES_FANS, **G_SERIES_
 # B. 盘配置数据库
 # ==========================================
 DISC_CONFIG_Z = {
-    # Z5盘 新增了配置
     "Z5盘": [
         "Retaining plate/5 (PN: 21050700103) X2", 
         "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050700603)", 
-        "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050702503)", # <--- 新增的组合
+        "Retaining plate/5 + Hub plate/5/184018 (Ret:21050700103, Hub:21050702503)", 
         "Retaining plate/5 + Hub plate/5/000010 (Ret:21050700103, Hub:21050702503)", 
         "Retaining plate/5 + Hub plate/5/424412 (Ret:21050700103, Hub:21050702603)", 
         "Retaining plate/5 + Hub plate/5/625212 (Ret:21050700103, Hub:21050704403)", 
@@ -172,7 +171,7 @@ with st.sidebar:
         st.stop() 
 
 # ==========================================
-# 云端数据结构保护检查 (新增了测量时间的检查)
+# 云端数据结构保护检查
 # ==========================================
 df_cloud = pd.DataFrame()
 if is_connected:
@@ -268,14 +267,18 @@ has_hub = "hub" in selected_config_detail.lower()
 # ==========================================
 st.write("---")
 
-# --- 获取当前时间作为测量时间默认值 ---
+# 获取当前北京时间
 utc_now = datetime.now(timezone.utc)
 beijing_now = utc_now.astimezone(timezone(timedelta(hours=8)))
-default_measure_time = beijing_now.strftime("%Y-%m-%d %H:%M")
+# 只取当前日期作为默认值
+default_measure_date = beijing_now.date()
 
 t_col1, t_col2 = st.columns(2)
 with t_col1: 
-    measure_time = st.text_input("⏱️ 测量时间", value=default_measure_time, help="默认当前时间，可按需手动修改")
+    # 将原来的文本输入替换为真正的日历组件
+    measure_date_obj = st.date_input("📅 测量日期", value=default_measure_date, help="点击选择日历日期")
+    # 将选中的日期对象转换为 "YYYY-MM-DD" 格式的字符串供保存
+    measure_time = measure_date_obj.strftime("%Y-%m-%d")
 with t_col2: 
     work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
 
@@ -331,7 +334,6 @@ if submitted:
         val_min = min(vals_list) if vals_list else 0
         val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
         
-        # --- 更新 base_headers，加入了 测量时间 ---
         base_headers = [
             "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
             "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
@@ -341,7 +343,6 @@ if submitted:
         data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
         all_headers = base_headers + data_headers
         
-        # --- 数据中加入了 measure_time ---
         row_data = [
             current_sys_time_str, measure_time, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
             blade_mold, plate_mold_1, plate_mold_2, start_pos, is_mixed_mold, input_temp, input_humidity, 
@@ -379,7 +380,6 @@ if is_connected:
             temp_col = df_cloud[col].replace("", pd.NA)
             if not temp_col.dropna().empty: valid_data_cols.append(col)
 
-        # --- 历史数据列加入了 测量时间 ---
         base_cols = [
             "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
             "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
@@ -444,7 +444,7 @@ if is_connected:
             "_original_row_index": None, 
             "录入时间_dt": None, 
             "录入时间": st.column_config.TextColumn(disabled=True), 
-            "测量时间": st.column_config.TextColumn(width="medium"), # 支持双击修改的测量时间
+            "测量时间": st.column_config.TextColumn(width="medium"),
             "工单号": st.column_config.TextColumn(width="medium"),
             "扇叶型号": st.column_config.TextColumn(width="large"),
             "扇叶料号": st.column_config.TextColumn(),

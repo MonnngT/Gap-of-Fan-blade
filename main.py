@@ -5,11 +5,13 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta, timezone
 import re
 import time
+import plotly.express as px
+import plotly.graph_objects as go
 
 # ==========================================
 # 1. 基础配置 & 谷歌表格连接
 # ==========================================
-st.set_page_config(page_title="扇叶间隙录入系统", page_icon="📏", layout="wide")
+st.set_page_config(page_title="扇叶间隙录入与分析系统", page_icon="📏", layout="wide")
 
 # 谷歌表格名称
 SHEET_NAME = "Gap_Data"
@@ -17,33 +19,25 @@ SHEET_NAME = "Gap_Data"
 # --- [加速锁 1] 缓存连接资源 ---
 @st.cache_resource(ttl=3600)
 def get_google_sheet():
-    """连接到 Google Sheets"""
     try:
-        if "gcp_service_account" not in st.secrets:
-            st.error("❌ 未找到 Secrets 配置。")
-            return None
+        if "gcp_service_account" not in st.secrets: return None
         creds_dict = dict(st.secrets["gcp_service_account"])
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        if "private_key" in creds_dict: creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open(SHEET_NAME).sheet1
         return sheet
-    except Exception as e:
-        st.error(f"❌ 连接失败: {str(e)}")
-        return None
+    except Exception: return None
 
 # --- [加速锁 2] 缓存数据读取 ---
 @st.cache_data(ttl=10)
 def load_data(_sheet):
-    """读取所有数据并转换为 DataFrame"""
     try:
         data = _sheet.get_all_records()
         if not data: return pd.DataFrame()
         return pd.DataFrame(data)
-    except Exception:
-        return pd.DataFrame()
+    except Exception: return pd.DataFrame()
 
 # ==========================================
 # A. 扇叶型号数据库
@@ -156,22 +150,26 @@ def calculate_gap_count(disc_type_str):
         return num * 2
 
 # ==========================================
-# 2. 侧边栏 & 连接测试
+# 2. 侧边栏导航 & 连接测试
 # ==========================================
 sheet = get_google_sheet()
 is_connected = sheet is not None
 
 with st.sidebar:
+    st.header("📌 系统导航")
+    app_mode = st.radio("选择功能模块", ["📝 数据录入与管理", "📈 BI 数据分析看板"])
+    
+    st.divider()
     st.header("⚙️ 系统状态")
     if is_connected:
         st.success("✅ 已连接到 Google Sheets")
     else:
         st.error("❌ 未连接到云端数据库")
         st.info("请检查 Secrets 配置")
-        st.stop() 
+        st.stop()
 
 # ==========================================
-# 云端数据结构保护检查
+# 数据清洗通用逻辑 (供录入和BI共同使用)
 # ==========================================
 df_cloud = pd.DataFrame()
 if is_connected:
@@ -180,197 +178,188 @@ if is_connected:
         missing_cols = []
         if "扇叶是否混模" not in df_cloud.columns: missing_cols.append("扇叶是否混模")
         if "测量时间" not in df_cloud.columns: missing_cols.append("测量时间")
-        
         if missing_cols:
             st.error("🚨 **数据库结构升级提示：**")
             st.warning(f"检测到您的 Google 表格缺少新增的列：**{'、'.join(missing_cols)}**。")
-            st.info("为了防止数据错位，**请立即前往 Google Sheets 手动插入新列：**\n\n1. 将【测量时间】加在【录入时间】和【工单号】之间。\n2. 将【扇叶是否混模】加在【起始位置】和【温度(°C)】之间。\n\n添加完成后，请点击右上角 ⋮ -> Clear cache 并刷新本页面。")
             st.stop()
 
-# ==========================================
-# 3. 交互区域
-# ==========================================
-st.title("📏 间隙测量数据记录系统")
+# ──────────────────────────────────────────
+# 模块一：📝 数据录入与管理
+# ──────────────────────────────────────────
+if app_mode == "📝 数据录入与管理":
+    st.title("📏 间隙测量数据记录系统")
 
-st.markdown("##### 1️⃣ 请选择扇叶大类")
-category_filter = st.radio("Series Filter", ["Z系列", "W系列", "G系列", "EMAX系列", "P系列"], horizontal=True, label_visibility="collapsed")
+    st.markdown("##### 1️⃣ 请选择扇叶大类")
+    category_filter = st.radio("Series Filter", ["Z系列", "W系列", "G系列", "EMAX系列", "P系列"], horizontal=True, label_visibility="collapsed")
 
-if category_filter == "Z系列":
-    current_fan_db = Z_SERIES_FANS; current_default_disc_db = DISC_CONFIG_Z; series_hint = "Z系列 (标准盘)"
-elif category_filter == "W系列":
-    current_fan_db = W_SERIES_FANS; current_default_disc_db = DISC_CONFIG_W_OTHER; series_hint = "W系列 (3种专用盘 或 18种通用盘)"
-elif category_filter == "G系列":
-    current_fan_db = G_SERIES_FANS; current_default_disc_db = DISC_CONFIG_G; series_hint = "G系列 (专用盘)"
-elif category_filter == "EMAX系列":
-    current_fan_db = EMAX_SERIES_FANS; current_default_disc_db = DISC_CONFIG_Z; series_hint = "EMAX系列 (使用 Z 盘)"
-elif category_filter == "P系列":
-    current_fan_db = {**P_SERIES_Z_USE, **P_SERIES_W_USE, **P_SERIES_ORIGINAL}; series_hint = "P系列 (自动匹配 Z盘/W盘/P盘)"; current_default_disc_db = DISC_CONFIG_P 
+    if category_filter == "Z系列":
+        current_fan_db = Z_SERIES_FANS; current_default_disc_db = DISC_CONFIG_Z; series_hint = "Z系列 (标准盘)"
+    elif category_filter == "W系列":
+        current_fan_db = W_SERIES_FANS; current_default_disc_db = DISC_CONFIG_W_OTHER; series_hint = "W系列 (3种专用盘 或 18种通用盘)"
+    elif category_filter == "G系列":
+        current_fan_db = G_SERIES_FANS; current_default_disc_db = DISC_CONFIG_G; series_hint = "G系列 (专用盘)"
+    elif category_filter == "EMAX系列":
+        current_fan_db = EMAX_SERIES_FANS; current_default_disc_db = DISC_CONFIG_Z; series_hint = "EMAX系列 (使用 Z 盘)"
+    elif category_filter == "P系列":
+        current_fan_db = {**P_SERIES_Z_USE, **P_SERIES_W_USE, **P_SERIES_ORIGINAL}; series_hint = "P系列 (自动匹配 Z盘/W盘/P盘)"; current_default_disc_db = DISC_CONFIG_P 
 
-st.write("---")
-f1, f2 = st.columns([2, 1])
-with f1:
-    fan_options = sorted(list(current_fan_db.keys()))
-    selected_fan_model = st.selectbox("2️⃣ 选择扇叶型号", fan_options)
-with f2:
-    fan_pn = current_fan_db[selected_fan_model]
-    st.text_input("对应扇叶料号", value=fan_pn, disabled=True)
+    st.write("---")
+    f1, f2 = st.columns([2, 1])
+    with f1:
+        fan_options = sorted(list(current_fan_db.keys()))
+        selected_fan_model = st.selectbox("2️⃣ 选择扇叶型号", fan_options)
+    with f2:
+        fan_pn = current_fan_db[selected_fan_model]
+        st.text_input("对应扇叶料号", value=fan_pn, disabled=True)
 
-if category_filter == "W系列":
-    if selected_fan_model in W_SERIES_YELLOW_KEYS:
-        current_disc_db = DISC_CONFIG_W_YELLOW; db_type_hint = "W系列 (3种专用盘)"
+    if category_filter == "W系列":
+        if selected_fan_model in W_SERIES_YELLOW_KEYS:
+            current_disc_db = DISC_CONFIG_W_YELLOW; db_type_hint = "W系列 (3种专用盘)"
+        else:
+            current_disc_db = DISC_CONFIG_W_OTHER; db_type_hint = "W系列 (18种通用盘)"
+    elif category_filter == "P系列":
+        if selected_fan_model in P_SERIES_Z_USE: current_disc_db = DISC_CONFIG_Z; db_type_hint = "P系列 (配置为 Z 盘)"
+        elif selected_fan_model in P_SERIES_W_USE: current_disc_db = DISC_CONFIG_W_OTHER; db_type_hint = "P系列 (配置为 W 盘)"
+        else: current_disc_db = DISC_CONFIG_P; db_type_hint = "P系列 (配置为 PMAX40 盘)"
     else:
-        current_disc_db = DISC_CONFIG_W_OTHER; db_type_hint = "W系列 (18种通用盘)"
-elif category_filter == "P系列":
-    if selected_fan_model in P_SERIES_Z_USE: current_disc_db = DISC_CONFIG_Z; db_type_hint = "P系列 (配置为 Z 盘)"
-    elif selected_fan_model in P_SERIES_W_USE: current_disc_db = DISC_CONFIG_W_OTHER; db_type_hint = "P系列 (配置为 W 盘)"
-    else: current_disc_db = DISC_CONFIG_P; db_type_hint = "P系列 (配置为 PMAX40 盘)"
-else:
-    current_disc_db = current_default_disc_db; db_type_hint = series_hint
+        current_disc_db = current_default_disc_db; db_type_hint = series_hint
 
-st.caption(f"当前加载盘库: {db_type_hint}")
-c1, c2 = st.columns(2)
-with c1: selected_disc_type = st.selectbox("3️⃣ 选择盘型号", list(current_disc_db.keys()))
-with c2: selected_angle = st.selectbox("4️⃣ 选择角度", ANGLES_LIST)
+    st.caption(f"当前加载盘库: {db_type_hint}")
+    c1, c2 = st.columns(2)
+    with c1: selected_disc_type = st.selectbox("3️⃣ 选择盘型号", list(current_disc_db.keys()))
+    with c2: selected_angle = st.selectbox("4️⃣ 选择角度", ANGLES_LIST)
 
-available_configs = current_disc_db[selected_disc_type]
-st.write("---")
-selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
+    available_configs = current_disc_db[selected_disc_type]
+    st.write("---")
+    selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
 
-# ==========================================
-# 核心逻辑：云端计数检查
-# ==========================================
-current_count = 0
-if is_connected and not df_cloud.empty:
-    required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
-    if all(col in df_cloud.columns for col in required_cols):
-        df_cloud["扇叶型号_clean"] = df_cloud["扇叶型号"].astype(str).str.strip()
-        df_cloud["盘型号_clean"] = df_cloud["盘型号"].astype(str).str.strip()
-        df_cloud["配置_clean"] = df_cloud["详细配置/料号"].astype(str).str.strip()
-        
-        target_fan = selected_fan_model.strip(); target_disc = selected_disc_type.strip(); target_config = selected_config_detail.strip()
-        df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
-        target_angle_val = float(selected_angle)
-        match_df = df_cloud[
-            (df_cloud["扇叶型号_clean"] == target_fan) & (df_cloud["盘型号_clean"] == target_disc) &
-            (df_cloud["配置_clean"] == target_config) & (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
-        ]
-        current_count = len(match_df)
+    # ==========================================
+    # 核心逻辑：云端计数检查
+    # ==========================================
+    current_count = 0
+    if not df_cloud.empty:
+        required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
+        if all(col in df_cloud.columns for col in required_cols):
+            df_cloud["扇叶型号_clean"] = df_cloud["扇叶型号"].astype(str).str.strip()
+            df_cloud["盘型号_clean"] = df_cloud["盘型号"].astype(str).str.strip()
+            df_cloud["配置_clean"] = df_cloud["详细配置/料号"].astype(str).str.strip()
+            
+            target_fan = selected_fan_model.strip(); target_disc = selected_disc_type.strip(); target_config = selected_config_detail.strip()
+            df_cloud["角度_val"] = pd.to_numeric(df_cloud["角度"], errors='coerce')
+            target_angle_val = float(selected_angle)
+            match_df = df_cloud[
+                (df_cloud["扇叶型号_clean"] == target_fan) & (df_cloud["盘型号_clean"] == target_disc) &
+                (df_cloud["配置_clean"] == target_config) & (abs(df_cloud["角度_val"] - target_angle_val) < 0.01)
+            ]
+            current_count = len(match_df)
 
-is_limit_reached = current_count >= 3
-if is_limit_reached: st.error(f"⚠️ **已达上限！** 该组合已录入 **{current_count}/3** 次。")
-else: st.success(f"✅ **状态正常：** 该组合已录入 **{current_count}/3** 次。")
+    is_limit_reached = current_count >= 3
+    if is_limit_reached: st.error(f"⚠️ **已达上限！** 该组合已录入 **{current_count}/3** 次。")
+    else: st.success(f"✅ **状态正常：** 该组合已录入 **{current_count}/3** 次。")
 
-has_hub = "hub" in selected_config_detail.lower()
+    has_hub = "hub" in selected_config_detail.lower()
 
-# ==========================================
-# 4. 模具与环境信息录入
-# ==========================================
-st.write("---")
+    # ==========================================
+    # 4. 模具与环境信息录入
+    # ==========================================
+    st.write("---")
 
-# 获取当前北京时间
-utc_now = datetime.now(timezone.utc)
-beijing_now = utc_now.astimezone(timezone(timedelta(hours=8)))
-# 只取当前日期作为默认值
-default_measure_date = beijing_now.date()
+    utc_now = datetime.now(timezone.utc)
+    beijing_now = utc_now.astimezone(timezone(timedelta(hours=8)))
+    default_measure_date = beijing_now.date()
 
-t_col1, t_col2 = st.columns(2)
-with t_col1: 
-    # 将原来的文本输入替换为真正的日历组件
-    measure_date_obj = st.date_input("📅 测量日期", value=default_measure_date, help="点击选择日历日期")
-    # 将选中的日期对象转换为 "YYYY-MM-DD" 格式的字符串供保存
-    measure_time = measure_date_obj.strftime("%Y-%m-%d")
-with t_col2: 
-    work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
+    t_col1, t_col2 = st.columns(2)
+    with t_col1: 
+        measure_date_obj = st.date_input("📅 测量日期", value=default_measure_date, help="点击选择日历日期")
+        measure_time = measure_date_obj.strftime("%Y-%m-%d")
+    with t_col2: 
+        work_order = st.text_input("📝 工单号", placeholder="输入工单号...")
 
-st.write("")
-if has_hub:
-    m_col2, m_col3, m_col4 = st.columns(3)
-    with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
-    with m_col3: plate_mold_1 = st.text_input("Retaining盘模具号", placeholder="输入模号...")
-    with m_col4: plate_mold_2 = st.text_input("Hub盘模具号", placeholder="输入模号...")
-else:
-    m_col2, m_col3 = st.columns(2)
-    with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
-    with m_col3: plate_mold_1 = st.text_input("盘模具号 (共用)", placeholder="输入模号...")
-    plate_mold_2 = None
-
-st.write("") 
-e1, e2, e3, e4 = st.columns(4)
-with e1: start_pos = st.selectbox("起始位置说明", ["有刻字", "无刻字"])
-with e2: is_mixed_mold = st.selectbox("扇叶是否混模", ["否", "是"])
-with e3: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
-with e4: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
-
-# ==========================================
-# 5. 数据录入表单
-# ==========================================
-st.write("---")
-data_points_count = calculate_gap_count(selected_disc_type)
-st.subheader(f"📝 录入数据: {selected_disc_type} (需录入 {data_points_count} 组)")
-with st.form("data_entry_form", clear_on_submit=True):
-    input_values = {}
-    cols_per_row = 4
-    current_cols = None
-    for i in range(1, data_points_count + 1):
-        col_index = (i - 1) % cols_per_row
-        if col_index == 0: current_cols = st.columns(cols_per_row)
-        with current_cols[col_index]:
-            input_values[f"Pos_{i}"] = st.number_input(f"位置 {i}", min_value=0.0, step=0.01, format="%.2f", key=f"val_{selected_disc_type}_{i}", value=None, placeholder="0.00")
     st.write("")
-    btn_label = "💾 提交并保存到云端" if not is_limit_reached else "⛔️ 次数已满"
-    submitted = st.form_submit_button(btn_label, type="primary", disabled=is_limit_reached)
-
-# ==========================================
-# 6. 保存逻辑
-# ==========================================
-if submitted:
-    if current_count >= 3: st.error("❌ 提交被拒绝：已达上限。")
+    if has_hub:
+        m_col2, m_col3, m_col4 = st.columns(3)
+        with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
+        with m_col3: plate_mold_1 = st.text_input("Retaining盘模具号", placeholder="输入模号...")
+        with m_col4: plate_mold_2 = st.text_input("Hub盘模具号", placeholder="输入模号...")
     else:
-        # 录入时间 (系统生成，不可更改)
-        current_sys_time_str = beijing_now.strftime("%Y-%m-%d %H:%M:%S")
-        
-        vals_list = [v for k, v in input_values.items() if v is not None]
-        val_max = max(vals_list) if vals_list else 0
-        val_min = min(vals_list) if vals_list else 0
-        val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
-        
-        base_headers = [
-            "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
-            "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
-            "数据量", "最大值", "最小值", "平均值"
-        ]
-        max_possible_data_cols = 50 
-        data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
-        all_headers = base_headers + data_headers
-        
-        row_data = [
-            current_sys_time_str, measure_time, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
-            blade_mold, plate_mold_1, plate_mold_2, start_pos, is_mixed_mold, input_temp, input_humidity, 
-            data_points_count, val_max, val_min, val_avg
-        ]
-        
-        for i in range(1, max_possible_data_cols + 1):
-            if i <= data_points_count: row_data.append(input_values.get(f"Pos_{i}", ""))
-            else: row_data.append("") 
-        try:
-            first_row = sheet.row_values(1)
-            if not first_row: sheet.append_row(all_headers)
-            sheet.append_row(row_data)
-            st.success(f"✅ 云端保存成功！{current_sys_time_str}")
-            st.cache_data.clear()
-            time.sleep(1)
-            st.rerun()
-        except Exception as e: st.error(f"❌ 云端保存失败: {e}")
+        m_col2, m_col3 = st.columns(2)
+        with m_col2: blade_mold = st.text_input("叶片模具号", placeholder="输入模号...")
+        with m_col3: plate_mold_1 = st.text_input("盘模具号 (共用)", placeholder="输入模号...")
+        plate_mold_2 = None
 
-# ==========================================
-# 7. 历史记录 & 筛选 & 管理
-# ==========================================
-st.divider()
-if is_connected:
+    st.write("") 
+    e1, e2, e3, e4 = st.columns(4)
+    with e1: start_pos = st.selectbox("起始位置说明", ["有刻字", "无刻字"])
+    with e2: is_mixed_mold = st.selectbox("扇叶是否混模", ["否", "是"])
+    with e3: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
+    with e4: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
+
+    # ==========================================
+    # 5. 数据录入表单
+    # ==========================================
+    st.write("---")
+    data_points_count = calculate_gap_count(selected_disc_type)
+    st.subheader(f"📝 录入数据: {selected_disc_type} (需录入 {data_points_count} 组)")
+    with st.form("data_entry_form", clear_on_submit=True):
+        input_values = {}
+        cols_per_row = 4
+        current_cols = None
+        for i in range(1, data_points_count + 1):
+            col_index = (i - 1) % cols_per_row
+            if col_index == 0: current_cols = st.columns(cols_per_row)
+            with current_cols[col_index]:
+                input_values[f"Pos_{i}"] = st.number_input(f"位置 {i}", min_value=0.0, step=0.01, format="%.2f", key=f"val_{selected_disc_type}_{i}", value=None, placeholder="0.00")
+        st.write("")
+        btn_label = "💾 提交并保存到云端" if not is_limit_reached else "⛔️ 次数已满"
+        submitted = st.form_submit_button(btn_label, type="primary", disabled=is_limit_reached)
+
+    # ==========================================
+    # 6. 保存逻辑
+    # ==========================================
+    if submitted:
+        if current_count >= 3: st.error("❌ 提交被拒绝：已达上限。")
+        else:
+            current_sys_time_str = beijing_now.strftime("%Y-%m-%d %H:%M:%S")
+            vals_list = [v for k, v in input_values.items() if v is not None]
+            val_max = max(vals_list) if vals_list else 0
+            val_min = min(vals_list) if vals_list else 0
+            val_avg = round(sum(vals_list) / len(vals_list), 3) if vals_list else 0
+            
+            base_headers = [
+                "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
+                "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
+                "数据量", "最大值", "最小值", "平均值"
+            ]
+            max_possible_data_cols = 50 
+            data_headers = [f"数据_{i}" for i in range(1, max_possible_data_cols + 1)]
+            all_headers = base_headers + data_headers
+            
+            row_data = [
+                current_sys_time_str, measure_time, work_order, selected_fan_model, fan_pn, selected_disc_type, selected_config_detail, selected_angle, 
+                blade_mold, plate_mold_1, plate_mold_2, start_pos, is_mixed_mold, input_temp, input_humidity, 
+                data_points_count, val_max, val_min, val_avg
+            ]
+            
+            for i in range(1, max_possible_data_cols + 1):
+                if i <= data_points_count: row_data.append(input_values.get(f"Pos_{i}", ""))
+                else: row_data.append("") 
+            try:
+                first_row = sheet.row_values(1)
+                if not first_row: sheet.append_row(all_headers)
+                sheet.append_row(row_data)
+                st.success(f"✅ 云端保存成功！{current_sys_time_str}")
+                st.cache_data.clear()
+                time.sleep(1)
+                st.rerun()
+            except Exception as e: st.error(f"❌ 云端保存失败: {e}")
+
+    # ==========================================
+    # 7. 历史记录 & 筛选 & 管理
+    # ==========================================
+    st.divider()
     st.subheader("📊 云端历史记录管理")
     
     if not df_cloud.empty:
-        # A. 数据清洗
         data_cols = [col for col in df_cloud.columns if col.startswith("数据_")]
         try: data_cols.sort(key=lambda x: int(x.split('_')[1]))
         except: pass 
@@ -380,17 +369,11 @@ if is_connected:
             temp_col = df_cloud[col].replace("", pd.NA)
             if not temp_col.dropna().empty: valid_data_cols.append(col)
 
-        base_cols = [
-            "录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", 
-            "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", 
-            "数据量", "最大值", "最小值", "平均值"
-        ]
+        base_cols = ["录入时间", "测量时间", "工单号", "扇叶型号", "扇叶料号", "盘型号", "详细配置/料号", "角度", "叶片模具号", "盘模具号", "Hub模具号", "起始位置", "扇叶是否混模", "温度(°C)", "湿度(%)", "数据量", "最大值", "最小值", "平均值"]
         final_cols = [c for c in base_cols if c in df_cloud.columns] + valid_data_cols
         
-        # B. 核心步骤
         df_cloud["_original_row_index"] = df_cloud.index + 2
         
-        # --- 🔍 筛选控制面板 ---
         with st.container(border=True):
             st.markdown("##### 🔍 筛选条件")
             f_col1, f_col2, f_col3 = st.columns(3)
@@ -409,7 +392,6 @@ if is_connected:
             with f_col3:
                 search_kw = st.text_input("🔍 关键词搜索 (工单/模具号/任意内容)", placeholder="例如：333525")
 
-        # --- C. 应用筛选逻辑 ---
         df_filtered = df_cloud.copy()
         if len(date_range) == 2:
             start_d, end_d = date_range
@@ -419,7 +401,6 @@ if is_connected:
             mask = df_filtered.astype(str).apply(lambda x: x.str.contains(search_kw, case=False, na=False)).any(axis=1)
             df_filtered = df_filtered[mask]
 
-        # --- D. 准备显示数据 ---
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
@@ -438,7 +419,6 @@ if is_connected:
 
         st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
-        # --- E. 动态构建 column_config ---
         my_column_config = {
             "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
             "_original_row_index": None, 
@@ -463,7 +443,6 @@ if is_connected:
             "最小值": st.column_config.NumberColumn(disabled=True),
             "平均值": st.column_config.NumberColumn(disabled=True),
         }
-
         for d_col in valid_data_cols:
             my_column_config[d_col] = st.column_config.NumberColumn(required=False, step=0.01)
 
@@ -475,14 +454,12 @@ if is_connected:
             key="history_editor"
         )
 
-        # --- F. 操作按钮区域 ---
         has_edits = False
         if "history_editor" in st.session_state:
             edits = st.session_state["history_editor"].get("edited_rows", {})
             if edits: has_edits = True
 
         col_save, col_del, col_dl = st.columns([1.5, 1.5, 3])
-        
         with col_save:
             if has_edits:
                 if st.button("💾 保存修改", type="primary"):
@@ -535,6 +512,156 @@ if is_connected:
                 file_name=f"间隙数据_筛选导出_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
-
     else:
         st.info("👋 云端暂无数据")
+
+
+# ──────────────────────────────────────────
+# 模块二：📈 BI 数据分析看板
+# ──────────────────────────────────────────
+elif app_mode == "📈 BI 数据分析看板":
+    st.title("📈 间隙数据 BI 分析看板")
+    st.write("利用多维数据深入挖掘产线规律，助力良率提升。")
+    
+    if df_cloud.empty:
+        st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
+    else:
+        # 数据类型清理 (为绘图准备)
+        df_plot = df_cloud.copy()
+        
+        # 定义需要转数字的列
+        numeric_cols_for_plot = ["温度(°C)", "湿度(%)", "角度", "平均值", "最大值", "最小值", "数据量"]
+        data_cols = [c for c in df_plot.columns if c.startswith("数据_")]
+        numeric_cols_for_plot.extend(data_cols)
+        
+        for col in numeric_cols_for_plot:
+            if col in df_plot.columns:
+                df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce')
+        
+        # 填充“扇叶是否混模”的空值为“否”
+        if "扇叶是否混模" in df_plot.columns:
+            df_plot["扇叶是否混模"] = df_plot["扇叶是否混模"].fillna("否").replace("", "否")
+
+        # ----------------------------------------
+        # 图表 1: 多位置间隙『圆度』分析 (雷达图)
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("1️⃣ 多位置间隙『圆度』与均匀性分析 (雷达图)")
+        st.markdown("通过雷达图直观查看单个风扇圆周各点间隙是否均匀（越接近正圆说明越均匀）。")
+        
+        # 选择一条记录来画雷达图
+        df_plot["展示名"] = df_plot["测量时间"].astype(str) + " | " + df_plot["工单号"].astype(str) + " | " + df_plot["扇叶型号"].astype(str)
+        selected_record_name = st.selectbox("🎯 请选择一条测量记录生成雷达图：", df_plot["展示名"].tolist())
+        
+        if selected_record_name:
+            target_row = df_plot[df_plot["展示名"] == selected_record_name].iloc[0]
+            
+            # 提取有效的数据点
+            valid_vals = []
+            valid_labels = []
+            for i, col in enumerate(data_cols):
+                val = target_row[col]
+                if pd.notna(val):
+                    valid_vals.append(val)
+                    valid_labels.append(f"位置 {i+1}")
+            
+            if len(valid_vals) >= 3: # 至少3个点才能画出面积
+                # 雷达图需要闭合，首尾相连
+                valid_vals.append(valid_vals[0])
+                valid_labels.append(valid_labels[0])
+                
+                fig1 = go.Figure(data=go.Scatterpolar(
+                    r=valid_vals,
+                    theta=valid_labels,
+                    mode='lines+markers',
+                    fill='toself',
+                    name='间隙数值',
+                    line_color='rgba(0, 110, 255, 0.8)'
+                ))
+                fig1.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, rangemode="tozero")),
+                    showlegend=False,
+                    height=450
+                )
+                st.plotly_chart(fig1, use_container_width=True)
+            else:
+                st.info("⚠️ 该记录的有效测量点不足，无法生成雷达图。")
+
+        # ----------------------------------------
+        # 图表 2: 稳定性对比 (箱线图)
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("2️⃣ 不同型号 / 混模状态的『稳定性』对比 (箱线图)")
+        st.markdown("箱体越扁、线条越短，说明该型号的间隙越稳定、一致性越高。")
+        
+        fig2 = px.box(
+            df_plot.dropna(subset=["平均值"]), 
+            x="扇叶型号", 
+            y="平均值", 
+            color="扇叶是否混模", 
+            points="all", # 显示所有散点
+            hover_data=["工单号", "测量时间"],
+            color_discrete_map={"否": "#2ecc71", "是": "#ff4757"}
+        )
+        fig2.update_layout(xaxis_tickangle=-45, height=500)
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # ----------------------------------------
+        # 图表 3: 角度 vs 间隙趋势 (散点图)
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("3️⃣ 关键参数 (角度) 对间隙的趋势影响")
+        st.markdown("观察随着装配角度的变化，平均间隙是逐渐变大还是变小。")
+        
+        df_angle_clean = df_plot.dropna(subset=["角度", "平均值"])
+        if not df_angle_clean.empty:
+            fig3 = px.scatter(
+                df_angle_clean, 
+                x="角度", 
+                y="平均值", 
+                color="扇叶型号",
+                size="数据量", # 点的大小代表测量的点数
+                hover_data=["工单号", "盘型号"],
+                opacity=0.7
+            )
+            fig3.update_layout(height=450)
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info("缺乏有效的角度与平均值数据。")
+
+        # ----------------------------------------
+        # 图表 4: 温湿度与模具分析
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("4️⃣ 环境温湿度 & 模具差异分析")
+        
+        c_left, c_right = st.columns(2)
+        with c_left:
+            st.markdown("###### 🌡️ 温度对间隙的影响散点图")
+            df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"])
+            if not df_temp_clean.empty:
+                fig4a = px.scatter(
+                    df_temp_clean, 
+                    x="温度(°C)", 
+                    y="平均值", 
+                    color="扇叶是否混模",
+                    trendline="lowess" if len(df_temp_clean) > 3 else None, # 尝试画趋势线
+                )
+                st.plotly_chart(fig4a, use_container_width=True)
+            else:
+                st.info("无有效温度数据")
+
+        with c_right:
+            st.markdown("###### ⚙️ 叶片模具号导致的间隙差异")
+            # 过滤掉没填模具号的数据
+            df_mold = df_plot[df_plot["叶片模具号"].astype(str).str.strip() != ""]
+            if not df_mold.empty:
+                fig4b = px.box(
+                    df_mold, 
+                    x="叶片模具号", 
+                    y="平均值",
+                    color="扇叶型号"
+                )
+                st.plotly_chart(fig4b, use_container_width=True)
+            else:
+                st.info("无有效模具号数据")

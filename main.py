@@ -561,6 +561,7 @@ elif app_mode == "📈 BI 数据分析看板":
             )
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -583,6 +584,7 @@ elif app_mode == "📈 BI 数据分析看板":
             fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
             st.plotly_chart(fig_disc, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：箱线图</div>", unsafe_allow_html=True)
 
         # ----------------------------------------
         # 图表 3: 盘型号与角度交叉分析
@@ -613,6 +615,7 @@ elif app_mode == "📈 BI 数据分析看板":
             )
             fig_heatmap.update_layout(height=450)
             st.plotly_chart(fig_heatmap, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -641,5 +644,6 @@ elif app_mode == "📈 BI 数据分析看板":
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")

@@ -507,11 +507,10 @@ if app_mode == "📝 数据录入与管理":
 
 
 # ──────────────────────────────────────────
-# 模块二：📈 BI 数据分析看板 (v13.1 精简直观版)
+# 模块二：📈 BI 数据分析看板
 # ──────────────────────────────────────────
 elif app_mode == "📈 BI 数据分析看板":
-    st.title("📈 间隙系统级 BI 分析看板")
-    st.write("精简维度，直击核心：从全景透视到温度趋势，精准锁定公差源头。")
+    st.title("📈 间隙数据分析看板")
     
     if df_cloud.empty:
         st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
@@ -541,11 +540,11 @@ elif app_mode == "📈 BI 数据分析看板":
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
 
         # ----------------------------------------
-        # 图表 1: 系统级全景透视图 (保留核心)
+        # 图表 1: 装配系统全景透视 (矩形树图)
         # ----------------------------------------
         st.write("---")
-        st.subheader("1️⃣ 【核心】装配系统全景透视 (矩形树图)")
-        st.markdown("以 **『盘型号 ➔ 扇叶型号 ➔ 装配角度』** 的层级结构向下钻取。**颜色越偏红，代表平均间隙越大**；色块面积代表测试的数据量。")
+        st.subheader("1️⃣ 装配系统全景透视 (矩形树图)")
+        st.markdown("说明：层级结构为『盘型号 ➔ 扇叶型号 ➔ 装配角度』。颜色代表平均间隙大小，色块面积代表数据量。")
         
         df_tree = df_plot.dropna(subset=["平均值"]).copy()
         if not df_tree.empty:
@@ -568,34 +567,32 @@ elif app_mode == "📈 BI 数据分析看板":
             st.info("数据不足，无法生成树图。")
 
         # ----------------------------------------
-        # 图表 2: 盘型号纯粹稳定性分析
+        # 图表 2: 盘型号稳定性分析 (箱线图)
         # ----------------------------------------
         st.write("---")
-        st.subheader("2️⃣ 盘型号专属稳定性分析 (纯净箱线图)")
-        st.markdown("排查各款**『盘』**本身的公差范围。箱子越扁，说明该款盘在配合各种扇叶时，间隙表现越一致。")
+        st.subheader("2️⃣ 盘型号稳定性分析 (箱线图)")
+        st.markdown("说明：展示各款盘型号在不同组合下的间隙分布与公差范围。")
         
         df_disc_clean = df_plot.dropna(subset=["盘型号", "平均值"]).copy()
         if not df_disc_clean.empty:
-            # 纯净版箱线图：去除了颜色分组，直接看盘的整体表现
             fig_disc = px.box(
                 df_disc_clean, 
                 x="盘型号", 
                 y="平均值", 
                 points="all", 
                 hover_data=["扇叶型号", "工单号", "角度"],
-                color_discrete_sequence=["#3498db"] # 统一使用科技蓝
+                color_discrete_sequence=["#3498db"]
             )
-            # 零间隙危险线
-            fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="⚠️ 零间隙危险区", annotation_position="bottom right")
+            fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="零间隙基准线", annotation_position="bottom right")
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
             st.plotly_chart(fig_disc, use_container_width=True)
 
         # ----------------------------------------
-        # 图表 3: 盘型号 vs 角度 的【交叉间隙矩阵】 (热力图)
+        # 图表 3: 盘型号与角度交叉分析 (热力图)
         # ----------------------------------------
         st.write("---")
-        st.subheader("3️⃣ 盘型号 vs 角度 的【交叉间隙矩阵】 (热力图)")
-        st.markdown("像看棋盘一样找规律：横轴为**角度**，纵轴为**盘型号**。颜色越红代表间隙越大，空白代表未测试组合。")
+        st.subheader("3️⃣ 盘型号与角度交叉分析 (热力图)")
+        st.markdown("说明：横轴为角度，纵轴为盘型号。数值与颜色深浅代表该组合的平均间隙大小。")
         
         df_heatmap_clean = df_plot.dropna(subset=["角度", "盘型号", "平均值"]).copy()
         if not df_heatmap_clean.empty:
@@ -615,7 +612,7 @@ elif app_mode == "📈 BI 数据分析看板":
                 pivot_df, 
                 text_auto=".2f", 
                 aspect="auto", 
-                color_continuous_scale="RdYlGn_r", # 绿到红渐变
+                color_continuous_scale="RdYlGn_r",
                 labels=dict(x="装配角度", y="盘型号", color="平均间隙")
             )
             fig_heatmap.update_layout(height=450)
@@ -624,33 +621,28 @@ elif app_mode == "📈 BI 数据分析看板":
             st.info("缺乏有效的交叉数据。")
 
         # ----------------------------------------
-        # 图表 4: 环境温度分析 (全新直观趋势版)
+        # 图表 4: 环境温度对间隙的影响趋势
         # ----------------------------------------
         st.write("---")
-        st.subheader("4️⃣ 环境温度对间隙的整体趋势影响")
-        st.markdown("将复杂的温度数据取整聚合，直接展示**不同温度下的平均间隙大小**。通过柱子的高低和颜色，直观判断热胀冷缩效应。")
+        st.subheader("4️⃣ 环境温度对间隙的影响趋势")
+        st.markdown("说明：将温度按整数聚合，展示不同温度下的平均间隙变化趋势。")
         
         df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"]).copy()
         if not df_temp_clean.empty:
-            # 将温度四舍五入取整，方便聚合查看大趋势
             df_temp_clean["温度_取整"] = df_temp_clean["温度(°C)"].round().astype(int)
-            
-            # 按整数温度分组，计算平均间隙和样本量
             df_temp_agg = df_temp_clean.groupby("温度_取整").agg({"平均值": "mean", "数据量": "sum"}).reset_index()
-            # 按温度从小到大排序
             df_temp_agg = df_temp_agg.sort_values("温度_取整")
             
             fig_temp = px.bar(
                 df_temp_agg, 
                 x="温度_取整", 
                 y="平均值",
-                text_auto=".2f", # 在柱子上直接显示数值
-                color="平均值",   # 颜色深浅代表间隙大小
-                color_continuous_scale="RdYlBu_r", # 蓝到红渐变：冷色低间隙，暖色高间隙
+                text_auto=".2f", 
+                color="平均值",   
+                color_continuous_scale="RdYlBu_r", 
                 labels={"温度_取整": "环境温度 (°C)", "平均值": "整体平均间隙", "数据量": "测试总记录数"},
                 hover_data=["数据量"]
             )
-            # 将X轴设置为离散类别，让柱状图排列更紧凑、不会出现空白的小数坐标
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)

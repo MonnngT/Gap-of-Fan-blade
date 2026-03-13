@@ -365,7 +365,6 @@ if app_mode == "📝 数据录入与管理":
         df_cloud["_original_row_index"] = df_cloud.index + 2
         
         with st.container(border=True):
-            st.markdown("##### 🔍 筛选条件")
             f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
                 try:
@@ -407,7 +406,7 @@ if app_mode == "📝 数据录入与管理":
                 df_show[col] = df_show[col].astype(str)
                 df_show[col] = df_show[col].replace(["nan", "None", "<NA>"], "")
 
-        st.caption(f"📊 当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
+        st.caption(f"当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
         my_column_config = {
             "删除?": st.column_config.CheckboxColumn("删除?", help="勾选后点击下方红色按钮删除", default=False, width="small"),
@@ -474,7 +473,7 @@ if app_mode == "📝 数据录入与管理":
                     except Exception as e:
                         st.error(f"❌ 保存失败: {e}")
             else:
-                st.button("💾 保存修改", disabled=True, help="请先在表格中修改数据")
+                st.button("💾 保存修改", disabled=True)
 
         with col_del:
             if st.button("🗑️ 删除选中行"):
@@ -497,9 +496,9 @@ if app_mode == "📝 数据录入与管理":
             st.write("") 
             csv = df_show.drop(columns=["删除?", "_original_row_index"]).to_csv(index=False).encode('utf-8-sig')
             st.download_button(
-                label="📥 导出筛选结果 (Excel)",
+                label="📥 导出当前数据 (Excel)",
                 data=csv,
-                file_name=f"间隙数据_筛选导出_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"间隙数据_导出_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
     else:
@@ -510,7 +509,7 @@ if app_mode == "📝 数据录入与管理":
 # 模块二：📈 BI 数据分析看板
 # ──────────────────────────────────────────
 elif app_mode == "📈 BI 数据分析看板":
-    st.title("📈 间隙数据分析看板")
+    st.title("📈 间隙系统级 BI 分析看板")
     
     if df_cloud.empty:
         st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
@@ -527,29 +526,28 @@ elif app_mode == "📈 BI 数据分析看板":
             df_plot["盘型号"] = df_plot["盘型号"].fillna("未知盘").replace("", "未知盘")
 
         # --- 顶部全局筛选器 ---
-        with st.expander("⚙️ 展开图表全局筛选器", expanded=False):
+        with st.expander("⚙️ 图表全局筛选器", expanded=False):
             c1, c2 = st.columns(2)
             with c1:
                 all_discs = sorted(df_plot["盘型号"].astype(str).unique().tolist())
-                filter_discs = st.multiselect("筛选特定【盘型号】:", all_discs, default=[])
+                filter_discs = st.multiselect("选择【盘型号】:", all_discs, default=[])
             with c2:
                 all_fans = sorted(df_plot["扇叶型号"].astype(str).unique().tolist())
-                filter_fans = st.multiselect("筛选特定【扇叶型号】:", all_fans, default=[])
+                filter_fans = st.multiselect("选择【扇叶型号】:", all_fans, default=[])
             
             if filter_discs: df_plot = df_plot[df_plot["盘型号"].isin(filter_discs)]
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
 
         # ----------------------------------------
-        # 图表 1: 装配系统全景透视 (矩形树图)
+        # 图表 1: 装配系统全景透视
         # ----------------------------------------
         st.write("---")
-        st.subheader("1️⃣ 装配系统全景透视 (矩形树图)")
-        st.markdown("说明：层级结构为『盘型号 ➔ 扇叶型号 ➔ 装配角度』。颜色代表平均间隙大小，色块面积代表数据量。")
+        st.subheader("1️⃣ 装配系统全景透视")
         
         df_tree = df_plot.dropna(subset=["平均值"]).copy()
         if not df_tree.empty:
             df_tree["角度_分类"] = df_tree["角度"].astype(str) + "°"
-            df_tree["系统"] = "所有测试组合"
+            df_tree["系统"] = "总数据"
             
             df_tree_agg = df_tree.groupby(["系统", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
             
@@ -564,14 +562,13 @@ elif app_mode == "📈 BI 数据分析看板":
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
         else:
-            st.info("数据不足，无法生成树图。")
+            st.info("数据不足")
 
         # ----------------------------------------
-        # 图表 2: 盘型号稳定性分析 (箱线图)
+        # 图表 2: 盘型号稳定性分析
         # ----------------------------------------
         st.write("---")
-        st.subheader("2️⃣ 盘型号稳定性分析 (箱线图)")
-        st.markdown("说明：展示各款盘型号在不同组合下的间隙分布与公差范围。")
+        st.subheader("2️⃣ 盘型号稳定性分析")
         
         df_disc_clean = df_plot.dropna(subset=["盘型号", "平均值"]).copy()
         if not df_disc_clean.empty:
@@ -583,16 +580,15 @@ elif app_mode == "📈 BI 数据分析看板":
                 hover_data=["扇叶型号", "工单号", "角度"],
                 color_discrete_sequence=["#3498db"]
             )
-            fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="零间隙基准线", annotation_position="bottom right")
+            fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
             st.plotly_chart(fig_disc, use_container_width=True)
 
         # ----------------------------------------
-        # 图表 3: 盘型号与角度交叉分析 (热力图)
+        # 图表 3: 盘型号与角度交叉分析
         # ----------------------------------------
         st.write("---")
-        st.subheader("3️⃣ 盘型号与角度交叉分析 (热力图)")
-        st.markdown("说明：横轴为角度，纵轴为盘型号。数值与颜色深浅代表该组合的平均间隙大小。")
+        st.subheader("3️⃣ 盘型号与角度交叉分析")
         
         df_heatmap_clean = df_plot.dropna(subset=["角度", "盘型号", "平均值"]).copy()
         if not df_heatmap_clean.empty:
@@ -618,14 +614,13 @@ elif app_mode == "📈 BI 数据分析看板":
             fig_heatmap.update_layout(height=450)
             st.plotly_chart(fig_heatmap, use_container_width=True)
         else:
-            st.info("缺乏有效的交叉数据。")
+            st.info("数据不足")
 
         # ----------------------------------------
-        # 图表 4: 环境温度对间隙的影响趋势
+        # 图表 4: 环境温度影响趋势
         # ----------------------------------------
         st.write("---")
-        st.subheader("4️⃣ 环境温度对间隙的影响趋势")
-        st.markdown("说明：将温度按整数聚合，展示不同温度下的平均间隙变化趋势。")
+        st.subheader("4️⃣ 环境温度影响趋势")
         
         df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"]).copy()
         if not df_temp_clean.empty:
@@ -640,11 +635,11 @@ elif app_mode == "📈 BI 数据分析看板":
                 text_auto=".2f", 
                 color="平均值",   
                 color_continuous_scale="RdYlBu_r", 
-                labels={"温度_取整": "环境温度 (°C)", "平均值": "整体平均间隙", "数据量": "测试总记录数"},
+                labels={"温度_取整": "环境温度 (°C)", "平均值": "整体平均间隙", "数据量": "测试记录数"},
                 hover_data=["数据量"]
             )
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)
         else:
-            st.info("无有效温度数据。")
+            st.info("数据不足")

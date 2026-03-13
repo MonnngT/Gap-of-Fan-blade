@@ -169,7 +169,7 @@ with st.sidebar:
         st.stop()
 
 # ==========================================
-# 数据清洗通用逻辑 (供录入和BI共同使用)
+# 数据清洗通用逻辑
 # ==========================================
 df_cloud = pd.DataFrame()
 if is_connected:
@@ -233,9 +233,7 @@ if app_mode == "📝 数据录入与管理":
     st.write("---")
     selected_config_detail = st.selectbox("5️⃣ 选择具体组合/料号 (完整信息)", available_configs, key=f"combo_{selected_disc_type}")
 
-    # ==========================================
     # 核心逻辑：云端计数检查
-    # ==========================================
     current_count = 0
     if not df_cloud.empty:
         required_cols = ["详细配置/料号", "扇叶型号", "盘型号", "角度"]
@@ -259,9 +257,7 @@ if app_mode == "📝 数据录入与管理":
 
     has_hub = "hub" in selected_config_detail.lower()
 
-    # ==========================================
     # 4. 模具与环境信息录入
-    # ==========================================
     st.write("---")
 
     utc_now = datetime.now(timezone.utc)
@@ -294,9 +290,7 @@ if app_mode == "📝 数据录入与管理":
     with e3: input_temp = st.number_input("🌡️ 温度 (°C)", min_value=-50.0, max_value=100.0, step=0.1, value=None, placeholder="例如: 26.5")
     with e4: input_humidity = st.number_input("💧 湿度 (%)", min_value=0, max_value=100, step=1, value=None, placeholder="例如: 55")
 
-    # ==========================================
     # 5. 数据录入表单
-    # ==========================================
     st.write("---")
     data_points_count = calculate_gap_count(selected_disc_type)
     st.subheader(f"📝 录入数据: {selected_disc_type} (需录入 {data_points_count} 组)")
@@ -313,9 +307,7 @@ if app_mode == "📝 数据录入与管理":
         btn_label = "💾 提交并保存到云端" if not is_limit_reached else "⛔️ 次数已满"
         submitted = st.form_submit_button(btn_label, type="primary", disabled=is_limit_reached)
 
-    # ==========================================
     # 6. 保存逻辑
-    # ==========================================
     if submitted:
         if current_count >= 3: st.error("❌ 提交被拒绝：已达上限。")
         else:
@@ -353,9 +345,7 @@ if app_mode == "📝 数据录入与管理":
                 st.rerun()
             except Exception as e: st.error(f"❌ 云端保存失败: {e}")
 
-    # ==========================================
     # 7. 历史记录 & 筛选 & 管理
-    # ==========================================
     st.divider()
     st.subheader("📊 云端历史记录管理")
     
@@ -517,22 +507,19 @@ if app_mode == "📝 数据录入与管理":
 
 
 # ──────────────────────────────────────────
-# 模块二：📈 BI 数据分析看板 (v13.0 精简清晰版)
+# 模块二：📈 BI 数据分析看板 (v13.1 精简直观版)
 # ──────────────────────────────────────────
 elif app_mode == "📈 BI 数据分析看板":
     st.title("📈 间隙系统级 BI 分析看板")
-    st.write("从『盘 -> 扇叶 -> 角度 -> 模具』多维度剖析装配系统，精准定位公差源头。")
+    st.write("精简维度，直击核心：从全景透视到温度趋势，精准锁定公差源头。")
     
     if df_cloud.empty:
         st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
     else:
         df_plot = df_cloud.copy()
         
-        # 1. 基础数据清洗
+        # 基础数据清洗
         numeric_cols_for_plot = ["温度(°C)", "湿度(%)", "角度", "平均值", "最大值", "最小值", "数据量"]
-        data_cols = [c for c in df_plot.columns if c.startswith("数据_")]
-        numeric_cols_for_plot.extend(data_cols)
-        
         for col in numeric_cols_for_plot:
             if col in df_plot.columns:
                 df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce')
@@ -554,7 +541,7 @@ elif app_mode == "📈 BI 数据分析看板":
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
 
         # ----------------------------------------
-        # 图表 1: 系统级全景透视图 (保留)
+        # 图表 1: 系统级全景透视图 (保留核心)
         # ----------------------------------------
         st.write("---")
         st.subheader("1️⃣ 【核心】装配系统全景透视 (矩形树图)")
@@ -581,41 +568,40 @@ elif app_mode == "📈 BI 数据分析看板":
             st.info("数据不足，无法生成树图。")
 
         # ----------------------------------------
-        # 图表 2: 盘型号稳定性分析 (去除了混模颜色分组)
+        # 图表 2: 盘型号纯粹稳定性分析
         # ----------------------------------------
         st.write("---")
-        st.subheader("2️⃣ 盘型号专属稳定性分析 (箱线图)")
-        st.markdown("排查各款**『盘』**本身的公差范围。如果箱子很长，说明这款盘配合不同扇叶时，间隙波动非常大。")
+        st.subheader("2️⃣ 盘型号专属稳定性分析 (纯净箱线图)")
+        st.markdown("排查各款**『盘』**本身的公差范围。箱子越扁，说明该款盘在配合各种扇叶时，间隙表现越一致。")
         
         df_disc_clean = df_plot.dropna(subset=["盘型号", "平均值"]).copy()
         if not df_disc_clean.empty:
-            # 移除了 color 参数，只按盘型号展示
+            # 纯净版箱线图：去除了颜色分组，直接看盘的整体表现
             fig_disc = px.box(
                 df_disc_clean, 
                 x="盘型号", 
                 y="平均值", 
                 points="all", 
-                hover_data=["扇叶型号", "工单号", "角度"]
+                hover_data=["扇叶型号", "工单号", "角度"],
+                color_discrete_sequence=["#3498db"] # 统一使用科技蓝
             )
-            # 保留红色零间隙危险线
+            # 零间隙危险线
             fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="⚠️ 零间隙危险区", annotation_position="bottom right")
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
             st.plotly_chart(fig_disc, use_container_width=True)
 
         # ----------------------------------------
-        # 图表 3: 盘型号与角度交叉分析 (升级为热力图)
+        # 图表 3: 盘型号 vs 角度 的【交叉间隙矩阵】 (热力图)
         # ----------------------------------------
         st.write("---")
         st.subheader("3️⃣ 盘型号 vs 角度 的【交叉间隙矩阵】 (热力图)")
-        st.markdown("横轴为**角度**，纵轴为**盘型号**。方块里的数字和颜色代表该组合下的**平均间隙**。颜色越红代表间隙越大，空白代表未测试。")
+        st.markdown("像看棋盘一样找规律：横轴为**角度**，纵轴为**盘型号**。颜色越红代表间隙越大，空白代表未测试组合。")
         
         df_heatmap_clean = df_plot.dropna(subset=["角度", "盘型号", "平均值"]).copy()
         if not df_heatmap_clean.empty:
-            # 强制按角度大小排序
             df_heatmap_clean["角度"] = pd.to_numeric(df_heatmap_clean["角度"])
             df_heatmap_clean = df_heatmap_clean.sort_values(by="角度")
             
-            # 生成透视表
             pivot_df = pd.pivot_table(
                 df_heatmap_clean, 
                 values="平均值", 
@@ -623,12 +609,11 @@ elif app_mode == "📈 BI 数据分析看板":
                 columns="角度", 
                 aggfunc="mean"
             )
-            # 给列名加上度数符号
             pivot_df.columns = [f"{col}°" for col in pivot_df.columns]
             
             fig_heatmap = px.imshow(
                 pivot_df, 
-                text_auto=".2f", # 自动在方块里显示保留2位小数的数值
+                text_auto=".2f", 
                 aspect="auto", 
                 color_continuous_scale="RdYlGn_r", # 绿到红渐变
                 labels=dict(x="装配角度", y="盘型号", color="平均间隙")
@@ -639,56 +624,35 @@ elif app_mode == "📈 BI 数据分析看板":
             st.info("缺乏有效的交叉数据。")
 
         # ----------------------------------------
-        # 图表 4: 模具 & 温度分析 (全新精简版)
+        # 图表 4: 环境温度分析 (全新直观趋势版)
         # ----------------------------------------
         st.write("---")
-        st.subheader("4️⃣ 叶片模具 & 环境温度辅助排查")
+        st.subheader("4️⃣ 环境温度对间隙的整体趋势影响")
+        st.markdown("将复杂的温度数据取整聚合，直接展示**不同温度下的平均间隙大小**。通过柱子的高低和颜色，直观判断热胀冷缩效应。")
         
-        c_left, c_right = st.columns(2)
-        
-        with c_left:
-            st.markdown("###### ⚙️ 叶片模具平均间隙排行榜")
-            st.caption("直接展示哪号模具打出来的叶片间隙偏大或偏小。")
-            df_mold = df_plot[df_plot["叶片模具号"].astype(str).str.strip() != ""]
-            if not df_mold.empty:
-                # 按模具计算平均值并排序，直接画柱状图
-                df_mold_agg = df_mold.groupby("叶片模具号")["平均值"].mean().reset_index().sort_values("平均值")
-                fig_mold = px.bar(
-                    df_mold_agg, 
-                    x="叶片模具号", 
-                    y="平均值",
-                    text_auto=".2f",
-                    color="平均值",
-                    color_continuous_scale="Viridis"
-                )
-                fig_mold.update_layout(xaxis_tickangle=-45, height=400)
-                st.plotly_chart(fig_mold, use_container_width=True)
-            else:
-                st.info("无有效模具号数据")
-
-        with c_right:
-            st.markdown("###### 🌡️ 温度区间对间隙的影响趋势")
-            st.caption("将离散的温度划分为区间进行统计，观察热胀冷缩的大趋势。")
-            df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"]).copy()
-            if not df_temp_clean.empty:
-                # 动态划分温度区间
-                def get_temp_bin(t):
-                    if t < 20: return "1. <20℃ (低温)"
-                    elif t <= 25: return "2. 20-25℃"
-                    elif t <= 30: return "3. 25-30℃"
-                    else: return "4. >30℃ (高温)"
-                
-                df_temp_clean["温度区间"] = df_temp_clean["温度(°C)"].apply(get_temp_bin)
-                df_temp_clean = df_temp_clean.sort_values("温度区间")
-                
-                fig_temp = px.box(
-                    df_temp_clean, 
-                    x="温度区间", 
-                    y="平均值",
-                    points="all",
-                    hover_data=["扇叶型号", "温度(°C)"]
-                )
-                fig_temp.update_layout(height=400)
-                st.plotly_chart(fig_temp, use_container_width=True)
-            else:
-                st.info("无有效温度数据")
+        df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"]).copy()
+        if not df_temp_clean.empty:
+            # 将温度四舍五入取整，方便聚合查看大趋势
+            df_temp_clean["温度_取整"] = df_temp_clean["温度(°C)"].round().astype(int)
+            
+            # 按整数温度分组，计算平均间隙和样本量
+            df_temp_agg = df_temp_clean.groupby("温度_取整").agg({"平均值": "mean", "数据量": "sum"}).reset_index()
+            # 按温度从小到大排序
+            df_temp_agg = df_temp_agg.sort_values("温度_取整")
+            
+            fig_temp = px.bar(
+                df_temp_agg, 
+                x="温度_取整", 
+                y="平均值",
+                text_auto=".2f", # 在柱子上直接显示数值
+                color="平均值",   # 颜色深浅代表间隙大小
+                color_continuous_scale="RdYlBu_r", # 蓝到红渐变：冷色低间隙，暖色高间隙
+                labels={"温度_取整": "环境温度 (°C)", "平均值": "整体平均间隙", "数据量": "测试总记录数"},
+                hover_data=["数据量"]
+            )
+            # 将X轴设置为离散类别，让柱状图排列更紧凑、不会出现空白的小数坐标
+            fig_temp.update_xaxes(type='category')
+            fig_temp.update_layout(height=450)
+            st.plotly_chart(fig_temp, use_container_width=True)
+        else:
+            st.info("无有效温度数据。")

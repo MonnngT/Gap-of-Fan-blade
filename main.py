@@ -526,10 +526,8 @@ elif app_mode == "📈 BI 数据分析看板":
     if df_cloud.empty:
         st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
     else:
-        # 数据类型清理 (为绘图准备)
         df_plot = df_cloud.copy()
         
-        # 定义需要转数字的列
         numeric_cols_for_plot = ["温度(°C)", "湿度(%)", "角度", "平均值", "最大值", "最小值", "数据量"]
         data_cols = [c for c in df_plot.columns if c.startswith("数据_")]
         numeric_cols_for_plot.extend(data_cols)
@@ -538,99 +536,109 @@ elif app_mode == "📈 BI 数据分析看板":
             if col in df_plot.columns:
                 df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce')
         
-        # 填充“扇叶是否混模”的空值为“否”
         if "扇叶是否混模" in df_plot.columns:
             df_plot["扇叶是否混模"] = df_plot["扇叶是否混模"].fillna("否").replace("", "否")
 
         # ----------------------------------------
-        # 图表 1: 多位置间隙『圆度』分析 (雷达图)
+        # 优化点 1: 雷达图支持唯一标识和【多选对比】
         # ----------------------------------------
         st.write("---")
         st.subheader("1️⃣ 多位置间隙『圆度』与均匀性分析 (雷达图)")
-        st.markdown("通过雷达图直观查看单个风扇圆周各点间隙是否均匀（越接近正圆说明越均匀）。")
+        st.markdown("通过雷达图直观查看圆周各点间隙是否均匀（越接近正圆说明越均匀）。**支持多选不同风扇进行重叠对比！**")
         
-        # 选择一条记录来画雷达图
-        df_plot["展示名"] = df_plot["测量时间"].astype(str) + " | " + df_plot["工单号"].astype(str) + " | " + df_plot["扇叶型号"].astype(str)
-        selected_record_name = st.selectbox("🎯 请选择一条测量记录生成雷达图：", df_plot["展示名"].tolist())
+        # 增加唯一行号，彻底解决重名无法选择的问题
+        df_plot["展示名"] = "[行" + df_plot.index.astype(str) + "] " + df_plot["测量时间"].astype(str) + " | " + df_plot["工单号"].astype(str) + " | " + df_plot["扇叶型号"].astype(str)
         
-        if selected_record_name:
-            target_row = df_plot[df_plot["展示名"] == selected_record_name].iloc[0]
-            
-            # 提取有效的数据点
-            valid_vals = []
-            valid_labels = []
-            for i, col in enumerate(data_cols):
-                val = target_row[col]
-                if pd.notna(val):
-                    valid_vals.append(val)
-                    valid_labels.append(f"位置 {i+1}")
-            
-            if len(valid_vals) >= 3: # 至少3个点才能画出面积
-                # 雷达图需要闭合，首尾相连
-                valid_vals.append(valid_vals[0])
-                valid_labels.append(valid_labels[0])
+        # 改为 st.multiselect，允许叠加
+        selected_records = st.multiselect(
+            "🎯 请选择一条或多条测量记录进行对比：", 
+            df_plot["展示名"].tolist(), 
+            default=[df_plot["展示名"].tolist()[0]] if len(df_plot) > 0 else None
+        )
+        
+        if selected_records:
+            fig1 = go.Figure()
+            for rec in selected_records:
+                target_row = df_plot[df_plot["展示名"] == rec].iloc[0]
                 
-                fig1 = go.Figure(data=go.Scatterpolar(
-                    r=valid_vals,
-                    theta=valid_labels,
-                    mode='lines+markers',
-                    fill='toself',
-                    name='间隙数值',
-                    line_color='rgba(0, 110, 255, 0.8)'
-                ))
+                valid_vals, valid_labels = [], []
+                for i, col in enumerate(data_cols):
+                    val = target_row[col]
+                    if pd.notna(val):
+                        valid_vals.append(val)
+                        valid_labels.append(f"位置 {i+1}")
+                
+                if len(valid_vals) >= 3:
+                    valid_vals.append(valid_vals[0])
+                    valid_labels.append(valid_labels[0])
+                    
+                    fig1.add_trace(go.Scatterpolar(
+                        r=valid_vals,
+                        theta=valid_labels,
+                        mode='lines+markers',
+                        # 只取竖线后面的名字显示在图例里，保持简洁
+                        name=rec.split(" | ")[-1] + f" ({rec.split(' | ')[0]})"
+                    ))
+            
+            if len(fig1.data) > 0:
                 fig1.update_layout(
                     polar=dict(radialaxis=dict(visible=True, rangemode="tozero")),
-                    showlegend=False,
-                    height=450
+                    showlegend=True,
+                    height=500
                 )
                 st.plotly_chart(fig1, use_container_width=True)
             else:
-                st.info("⚠️ 该记录的有效测量点不足，无法生成雷达图。")
+                st.info("⚠️ 所选记录有效测量点不足，无法生成雷达图。")
 
         # ----------------------------------------
-        # 图表 2: 稳定性对比 (箱线图)
+        # 优化点 2: 箱线图增加【红色零间隙危险线】
         # ----------------------------------------
         st.write("---")
         st.subheader("2️⃣ 不同型号 / 混模状态的『稳定性』对比 (箱线图)")
-        st.markdown("箱体越扁、线条越短，说明该型号的间隙越稳定、一致性越高。")
+        st.markdown("箱体越扁说明稳定性越高。**如果散点或箱体触碰到红色的 `Y=0` 危险线，则说明存在严重的零间隙（碰擦）风险！**")
         
         fig2 = px.box(
             df_plot.dropna(subset=["平均值"]), 
             x="扇叶型号", 
             y="平均值", 
             color="扇叶是否混模", 
-            points="all", # 显示所有散点
+            points="all", 
             hover_data=["工单号", "测量时间"],
             color_discrete_map={"否": "#2ecc71", "是": "#ff4757"}
         )
+        # 添加红色警戒线
+        fig2.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="⚠️ 零间隙危险区", annotation_position="bottom right")
         fig2.update_layout(xaxis_tickangle=-45, height=500)
         st.plotly_chart(fig2, use_container_width=True)
 
         # ----------------------------------------
-        # 图表 3: 角度 vs 间隙趋势 (散点图)
+        # 优化点 3: 角度 vs 间隙趋势 (把散点改成按角度分组的箱线图)
         # ----------------------------------------
         st.write("---")
-        st.subheader("3️⃣ 关键参数 (角度) 对间隙的趋势影响")
-        st.markdown("观察随着装配角度的变化，平均间隙是逐渐变大还是变小。")
+        st.subheader("3️⃣ 关键参数 (角度) 对间隙的分布影响")
+        st.markdown("将横轴固定为角度分类，可以极大地减轻密集点带来的视觉疲劳，清晰看出不同角度下的间隙分布区间。")
         
-        df_angle_clean = df_plot.dropna(subset=["角度", "平均值"])
+        df_angle_clean = df_plot.dropna(subset=["角度", "平均值"]).copy()
         if not df_angle_clean.empty:
-            fig3 = px.scatter(
+            # 强制把角度转为字符串，这样Plotly会把它当成分类的柱子，而不是连续的密集点
+            df_angle_clean = df_angle_clean.sort_values(by="角度")
+            df_angle_clean["角度图例"] = df_angle_clean["角度"].astype(str) + "°"
+            
+            fig3 = px.box(
                 df_angle_clean, 
-                x="角度", 
+                x="角度图例", 
                 y="平均值", 
-                color="扇叶型号",
-                size="数据量", # 点的大小代表测量的点数
-                hover_data=["工单号", "盘型号"],
-                opacity=0.7
+                color="扇叶是否混模",
+                points="all", 
+                hover_data=["扇叶型号", "工单号"]
             )
-            fig3.update_layout(height=450)
+            fig3.update_layout(height=450, xaxis_title="装配角度")
             st.plotly_chart(fig3, use_container_width=True)
         else:
             st.info("缺乏有效的角度与平均值数据。")
 
         # ----------------------------------------
-        # 图表 4: 温湿度与模具分析
+        # 优化点 4: 温湿度与模具分析 (纯散点图，防止报错)
         # ----------------------------------------
         st.write("---")
         st.subheader("4️⃣ 环境温湿度 & 模具差异分析")
@@ -640,12 +648,14 @@ elif app_mode == "📈 BI 数据分析看板":
             st.markdown("###### 🌡️ 温度对间隙的影响散点图")
             df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"])
             if not df_temp_clean.empty:
+                # 已经去除了 trendline="lowess" 防止报错
                 fig4a = px.scatter(
                     df_temp_clean, 
                     x="温度(°C)", 
                     y="平均值", 
                     color="扇叶是否混模",
-                    trendline="lowess" if len(df_temp_clean) > 3 else None, # 尝试画趋势线
+                    opacity=0.7,
+                    hover_data=["扇叶型号"]
                 )
                 st.plotly_chart(fig4a, use_container_width=True)
             else:
@@ -653,7 +663,6 @@ elif app_mode == "📈 BI 数据分析看板":
 
         with c_right:
             st.markdown("###### ⚙️ 叶片模具号导致的间隙差异")
-            # 过滤掉没填模具号的数据
             df_mold = df_plot[df_plot["叶片模具号"].astype(str).str.strip() != ""]
             if not df_mold.empty:
                 fig4b = px.box(

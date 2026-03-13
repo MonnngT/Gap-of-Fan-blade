@@ -517,17 +517,18 @@ if app_mode == "📝 数据录入与管理":
 
 
 # ──────────────────────────────────────────
-# 模块二：📈 BI 数据分析看板
+# 模块二：📈 BI 数据分析看板 (v12.0 全面系统分析版)
 # ──────────────────────────────────────────
 elif app_mode == "📈 BI 数据分析看板":
-    st.title("📈 间隙数据 BI 分析看板")
-    st.write("利用多维数据深入挖掘产线规律，助力良率提升。")
+    st.title("📈 间隙系统级 BI 分析看板")
+    st.write("从『盘 -> 扇叶 -> 角度』多维度剖析装配系统，精准定位公差源头。")
     
     if df_cloud.empty:
         st.warning("📭 暂无足够的数据生成图表，请先录入数据。")
     else:
         df_plot = df_cloud.copy()
         
+        # 1. 基础数据清洗
         numeric_cols_for_plot = ["温度(°C)", "湿度(%)", "角度", "平均值", "最大值", "最小值", "数据量"]
         data_cols = [c for c in df_plot.columns if c.startswith("数据_")]
         numeric_cols_for_plot.extend(data_cols)
@@ -538,26 +539,113 @@ elif app_mode == "📈 BI 数据分析看板":
         
         if "扇叶是否混模" in df_plot.columns:
             df_plot["扇叶是否混模"] = df_plot["扇叶是否混模"].fillna("否").replace("", "否")
+        if "盘型号" in df_plot.columns:
+            df_plot["盘型号"] = df_plot["盘型号"].fillna("未知盘").replace("", "未知盘")
+
+        # --- 顶部全局筛选器 ---
+        with st.expander("⚙️ 展开图表全局筛选器", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                all_discs = sorted(df_plot["盘型号"].astype(str).unique().tolist())
+                filter_discs = st.multiselect("筛选特定【盘型号】:", all_discs, default=[])
+            with c2:
+                all_fans = sorted(df_plot["扇叶型号"].astype(str).unique().tolist())
+                filter_fans = st.multiselect("筛选特定【扇叶型号】:", all_fans, default=[])
+            
+            if filter_discs: df_plot = df_plot[df_plot["盘型号"].isin(filter_discs)]
+            if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
 
         # ----------------------------------------
-        # 优化点 1: 雷达图支持唯一标识和【多选对比】
+        # 图表 1: 系统级全景透视图 (Treemap)
         # ----------------------------------------
         st.write("---")
-        st.subheader("1️⃣ 多位置间隙『圆度』与均匀性分析 (雷达图)")
-        st.markdown("通过雷达图直观查看圆周各点间隙是否均匀（越接近正圆说明越均匀）。**支持多选不同风扇进行重叠对比！**")
+        st.subheader("1️⃣ 【核心】装配系统全景透视 (矩形树图)")
+        st.markdown("以 **『盘型号 ➔ 扇叶型号 ➔ 装配角度』** 的层级结构向下钻取。**颜色越偏红，代表平均间隙越大**；色块面积代表测试的数据量。点击图块可放大查看。")
         
-        # 增加唯一行号，彻底解决重名无法选择的问题
-        df_plot["展示名"] = "[行" + df_plot.index.astype(str) + "] " + df_plot["测量时间"].astype(str) + " | " + df_plot["工单号"].astype(str) + " | " + df_plot["扇叶型号"].astype(str)
+        df_tree = df_plot.dropna(subset=["平均值"]).copy()
+        if not df_tree.empty:
+            df_tree["角度_分类"] = df_tree["角度"].astype(str) + "°"
+            df_tree["系统"] = "所有测试组合"
+            
+            # 聚合计算每个组合的平均值，防止数据过多重叠
+            df_tree_agg = df_tree.groupby(["系统", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
+            
+            fig_tree = px.treemap(
+                df_tree_agg, 
+                path=["系统", "盘型号", "扇叶型号", "角度_分类"], 
+                values="数据量",
+                color="平均值",
+                color_continuous_scale="RdYlGn_r", # 绿到红渐变
+                hover_data={"平均值": ':.2f'}
+            )
+            fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
+            st.plotly_chart(fig_tree, use_container_width=True)
+        else:
+            st.info("数据不足，无法生成树图。")
+
+        # ----------------------------------------
+        # 图表 2: 盘型号稳定性分析
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("2️⃣ 盘型号专属稳定性分析 (箱线图)")
+        st.markdown("排查是不是某款**『盘』**本身的公差导致了整体间隙的巨大波动。")
         
-        # 改为 st.multiselect，允许叠加
+        df_disc_clean = df_plot.dropna(subset=["盘型号", "平均值"]).copy()
+        if not df_disc_clean.empty:
+            fig_disc = px.box(
+                df_disc_clean, 
+                x="盘型号", 
+                y="平均值", 
+                color="扇叶是否混模", 
+                points="all", 
+                hover_data=["扇叶型号", "工单号", "角度"],
+                color_discrete_map={"否": "#3498db", "是": "#e74c3c"} # 蓝红配色
+            )
+            fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="⚠️ 零间隙危险区", annotation_position="bottom right")
+            fig_disc.update_layout(xaxis_tickangle=-45, height=450)
+            st.plotly_chart(fig_disc, use_container_width=True)
+
+        # ----------------------------------------
+        # 图表 3: 盘与角度的交叉分析
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("3️⃣ 盘型号与角度的【交叉趋势影响】")
+        st.markdown("横轴是角度，用不同的颜色区分**不同的盘型号**。用来观察：在相同角度下，换一种盘是否会让间隙发生显著变化。")
+        
+        df_angle_clean = df_plot.dropna(subset=["角度", "平均值"]).copy()
+        if not df_angle_clean.empty:
+            df_angle_clean = df_angle_clean.sort_values(by="角度")
+            df_angle_clean["角度图例"] = df_angle_clean["角度"].astype(str) + "°"
+            
+            fig_angle = px.box(
+                df_angle_clean, 
+                x="角度图例", 
+                y="平均值", 
+                color="盘型号", # 用盘型号进行颜色区分
+                points="all", 
+                hover_data=["扇叶型号", "工单号"]
+            )
+            fig_angle.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
+            fig_angle.update_layout(height=500, xaxis_title="装配角度")
+            st.plotly_chart(fig_angle, use_container_width=True)
+
+        # ----------------------------------------
+        # 图表 4: 多位置圆度与均匀性 (雷达图)
+        # ----------------------------------------
+        st.write("---")
+        st.subheader("4️⃣ 单体/批量多位置间隙『圆度』叠加对比 (雷达图)")
+        st.markdown("通过雷达图直观查看圆周各点间隙是否偏心。**支持在下方多选不同风扇（可跨越不同盘或角度）进行叠加对比！**")
+        
+        df_plot["展示名"] = "[行" + df_plot.index.astype(str) + "] " + df_plot["测量时间"].astype(str) + " | " + df_plot["盘型号"].astype(str) + " | " + df_plot["扇叶型号"].astype(str) + " | " + df_plot["角度"].astype(str) + "°"
+        
         selected_records = st.multiselect(
-            "🎯 请选择一条或多条测量记录进行对比：", 
+            "🎯 请选择记录 (已包含盘和角度信息)：", 
             df_plot["展示名"].tolist(), 
             default=[df_plot["展示名"].tolist()[0]] if len(df_plot) > 0 else None
         )
         
         if selected_records:
-            fig1 = go.Figure()
+            fig_radar = go.Figure()
             for rec in selected_records:
                 target_row = df_plot[df_plot["展示名"] == rec].iloc[0]
                 
@@ -572,92 +660,44 @@ elif app_mode == "📈 BI 数据分析看板":
                     valid_vals.append(valid_vals[0])
                     valid_labels.append(valid_labels[0])
                     
-                    fig1.add_trace(go.Scatterpolar(
+                    fig_radar.add_trace(go.Scatterpolar(
                         r=valid_vals,
                         theta=valid_labels,
                         mode='lines+markers',
-                        # 只取竖线后面的名字显示在图例里，保持简洁
-                        name=rec.split(" | ")[-1] + f" ({rec.split(' | ')[0]})"
+                        name=rec.split("] ")[-1] # 隐藏行号，保留核心信息显示
                     ))
             
-            if len(fig1.data) > 0:
-                fig1.update_layout(
+            if len(fig_radar.data) > 0:
+                fig_radar.update_layout(
                     polar=dict(radialaxis=dict(visible=True, rangemode="tozero")),
                     showlegend=True,
-                    height=500
+                    height=550,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
                 )
-                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig_radar, use_container_width=True)
             else:
                 st.info("⚠️ 所选记录有效测量点不足，无法生成雷达图。")
 
         # ----------------------------------------
-        # 优化点 2: 箱线图增加【红色零间隙危险线】
+        # 图表 5: 环境温湿度与模具差异
         # ----------------------------------------
         st.write("---")
-        st.subheader("2️⃣ 不同型号 / 混模状态的『稳定性』对比 (箱线图)")
-        st.markdown("箱体越扁说明稳定性越高。**如果散点或箱体触碰到红色的 `Y=0` 危险线，则说明存在严重的零间隙（碰擦）风险！**")
-        
-        fig2 = px.box(
-            df_plot.dropna(subset=["平均值"]), 
-            x="扇叶型号", 
-            y="平均值", 
-            color="扇叶是否混模", 
-            points="all", 
-            hover_data=["工单号", "测量时间"],
-            color_discrete_map={"否": "#2ecc71", "是": "#ff4757"}
-        )
-        # 添加红色警戒线
-        fig2.add_hline(y=0, line_dash="dash", line_color="red", line_width=3, annotation_text="⚠️ 零间隙危险区", annotation_position="bottom right")
-        fig2.update_layout(xaxis_tickangle=-45, height=500)
-        st.plotly_chart(fig2, use_container_width=True)
-
-        # ----------------------------------------
-        # 优化点 3: 角度 vs 间隙趋势 (把散点改成按角度分组的箱线图)
-        # ----------------------------------------
-        st.write("---")
-        st.subheader("3️⃣ 关键参数 (角度) 对间隙的分布影响")
-        st.markdown("将横轴固定为角度分类，可以极大地减轻密集点带来的视觉疲劳，清晰看出不同角度下的间隙分布区间。")
-        
-        df_angle_clean = df_plot.dropna(subset=["角度", "平均值"]).copy()
-        if not df_angle_clean.empty:
-            # 强制把角度转为字符串，这样Plotly会把它当成分类的柱子，而不是连续的密集点
-            df_angle_clean = df_angle_clean.sort_values(by="角度")
-            df_angle_clean["角度图例"] = df_angle_clean["角度"].astype(str) + "°"
-            
-            fig3 = px.box(
-                df_angle_clean, 
-                x="角度图例", 
-                y="平均值", 
-                color="扇叶是否混模",
-                points="all", 
-                hover_data=["扇叶型号", "工单号"]
-            )
-            fig3.update_layout(height=450, xaxis_title="装配角度")
-            st.plotly_chart(fig3, use_container_width=True)
-        else:
-            st.info("缺乏有效的角度与平均值数据。")
-
-        # ----------------------------------------
-        # 优化点 4: 温湿度与模具分析 (纯散点图，防止报错)
-        # ----------------------------------------
-        st.write("---")
-        st.subheader("4️⃣ 环境温湿度 & 模具差异分析")
+        st.subheader("5️⃣ 环境温湿度 & 模具差异辅助分析")
         
         c_left, c_right = st.columns(2)
         with c_left:
-            st.markdown("###### 🌡️ 温度对间隙的影响散点图")
+            st.markdown("###### 🌡️ 温度变化对间隙的离散影响")
             df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"])
             if not df_temp_clean.empty:
-                # 已经去除了 trendline="lowess" 防止报错
-                fig4a = px.scatter(
+                fig_temp = px.scatter(
                     df_temp_clean, 
                     x="温度(°C)", 
                     y="平均值", 
-                    color="扇叶是否混模",
+                    color="盘型号", # 用盘型号观察是否某些盘对温度更敏感
                     opacity=0.7,
                     hover_data=["扇叶型号"]
                 )
-                st.plotly_chart(fig4a, use_container_width=True)
+                st.plotly_chart(fig_temp, use_container_width=True)
             else:
                 st.info("无有效温度数据")
 
@@ -665,12 +705,13 @@ elif app_mode == "📈 BI 数据分析看板":
             st.markdown("###### ⚙️ 叶片模具号导致的间隙差异")
             df_mold = df_plot[df_plot["叶片模具号"].astype(str).str.strip() != ""]
             if not df_mold.empty:
-                fig4b = px.box(
+                fig_mold = px.box(
                     df_mold, 
                     x="叶片模具号", 
                     y="平均值",
                     color="扇叶型号"
                 )
-                st.plotly_chart(fig4b, use_container_width=True)
+                fig_mold.add_hline(y=0, line_dash="dash", line_color="red", line_width=1)
+                st.plotly_chart(fig_mold, use_container_width=True)
             else:
                 st.info("无有效模具号数据")

@@ -393,7 +393,6 @@ if app_mode == "📝 数据录入与管理":
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        # ✅ 强制底层类型清洗
         numeric_cols_def = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"]
         for c in df_show.columns:
             if c.startswith("数据_"): numeric_cols_def.append(c)
@@ -507,7 +506,7 @@ if app_mode == "📝 数据录入与管理":
 
 
 # ──────────────────────────────────────────
-# 模块二：📈 间隙数据分析看板 (v15.0 终极结构版)
+# 模块二：📈 间隙数据分析看板
 # ──────────────────────────────────────────
 elif app_mode == "📈 间隙数据分析看板":
     st.title("📈 间隙数据分析看板")
@@ -530,17 +529,21 @@ elif app_mode == "📈 间隙数据分析看板":
 
         # --- 顶部全局筛选器 ---
         with st.expander("⚙️ 图表全局筛选器", expanded=False):
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 all_discs = sorted(df_plot["盘型号"].astype(str).unique().tolist())
                 filter_discs = st.multiselect("选择【盘型号】:", all_discs, default=[])
             with c2:
                 all_fans = sorted(df_plot["扇叶型号"].astype(str).unique().tolist())
                 filter_fans = st.multiselect("选择【扇叶型号】:", all_fans, default=[])
+            with c3:
+                valid_angles = df_plot["角度"].dropna().unique().tolist()
+                all_angles = sorted(valid_angles)
+                filter_angles = st.multiselect("选择【装配角度】:", all_angles, default=[])
             
             if filter_discs: df_plot = df_plot[df_plot["盘型号"].isin(filter_discs)]
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
-
+            if filter_angles: df_plot = df_plot[df_plot["角度"].isin(filter_angles)]
 
         # ========================================
         # 维度一：系统全局视角
@@ -569,11 +572,9 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-
         # ========================================
         # 维度二：单因子稳定性分析
         # ========================================
-        # 图表 2: 盘型号稳定性分析
         st.write("---")
         st.subheader("2️⃣ 盘型号稳定性分析")
         
@@ -594,7 +595,6 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # 图表 3: 扇叶型号稳定性分析
         st.write("---")
         st.subheader("3️⃣ 扇叶型号稳定性分析")
         
@@ -615,7 +615,6 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # 图表 4: 装配角度稳定性分析 (全新新增)
         st.write("---")
         st.subheader("4️⃣ 装配角度稳定性分析")
         
@@ -630,7 +629,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 y="平均值", 
                 points="all", 
                 hover_data=["盘型号", "扇叶型号", "工单号"],
-                color_discrete_sequence=["#9b59b6"] # 使用紫色区分角度
+                color_discrete_sequence=["#9b59b6"]
             )
             fig_angle_stab.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_angle_stab.update_layout(xaxis_tickangle=-45, height=450, xaxis_title="装配角度")
@@ -639,11 +638,9 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-
         # ========================================
         # 维度三：双因子交叉矩阵分析
         # ========================================
-        # 图表 5: 盘型号与扇叶型号交叉分析
         st.write("---")
         st.subheader("5️⃣ 盘型号与扇叶型号交叉分析")
         
@@ -670,7 +667,6 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # 图表 6: 盘型号与装配角度交叉分析
         st.write("---")
         st.subheader("6️⃣ 盘型号与装配角度交叉分析")
         
@@ -701,7 +697,6 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # 图表 7: 扇叶型号与装配角度交叉分析 (变更为直观的热力图)
         st.write("---")
         st.subheader("7️⃣ 扇叶型号与装配角度交叉分析")
         
@@ -732,11 +727,9 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-
         # ========================================
         # 维度四：环境因子
         # ========================================
-        # 图表 8: 环境温度影响趋势
         st.write("---")
         st.subheader("8️⃣ 环境温度影响趋势")
         

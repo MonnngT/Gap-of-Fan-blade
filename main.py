@@ -157,7 +157,6 @@ is_connected = sheet is not None
 
 with st.sidebar:
     st.header("📌 系统导航")
-    # ✅ 导航名称统一修改为间隙数据分析看板
     app_mode = st.radio("选择功能模块", ["📝 数据录入与管理", "📈 间隙数据分析看板"])
     
     st.divider()
@@ -394,9 +393,7 @@ if app_mode == "📝 数据录入与管理":
         df_show = df_filtered[final_cols + ["_original_row_index"]].iloc[::-1].copy()
         df_show.insert(0, "删除?", False)
         
-        # =========================================================
-        # ✅ 强制底层类型清洗 (彻底解决 data_editor 报错)
-        # =========================================================
+        # ✅ 强制底层类型清洗
         numeric_cols_def = ["温度(°C)", "湿度(%)", "角度", "数据量", "最大值", "最小值", "平均值"]
         for c in df_show.columns:
             if c.startswith("数据_"): numeric_cols_def.append(c)
@@ -405,13 +402,10 @@ if app_mode == "📝 数据录入与管理":
             if col in ["删除?", "_original_row_index", "录入时间_dt"]:
                 continue 
             if col in numeric_cols_def:
-                # 强制转换为浮点型，无法转换的变为空值，完美匹配 NumberColumn
                 df_show[col] = pd.to_numeric(df_show[col], errors='coerce').astype('float64')
             else:
-                # 文本列强制转为字符串，消除 None/NaN 混合类型导致的 schema 校验崩溃
                 df_show[col] = df_show[col].fillna("").astype(str)
                 df_show[col] = df_show[col].replace(["nan", "None", "<NA>", "NaN"], "")
-        # =========================================================
 
         st.caption(f"当前筛选结果：共 **{len(df_show)}** 条 | ✏️ **双击表格内容可直接修改，改完请点击下方【保存修改】按钮**")
 
@@ -513,10 +507,9 @@ if app_mode == "📝 数据录入与管理":
 
 
 # ──────────────────────────────────────────
-# 模块二：📈 间隙数据分析看板 (v14.0 扇叶分析全图版)
+# 模块二：📈 间隙数据分析看板 (v15.0 终极结构版)
 # ──────────────────────────────────────────
 elif app_mode == "📈 间隙数据分析看板":
-    # ✅ 统一主标题
     st.title("📈 间隙数据分析看板")
     
     if df_cloud.empty:
@@ -548,9 +541,10 @@ elif app_mode == "📈 间隙数据分析看板":
             if filter_discs: df_plot = df_plot[df_plot["盘型号"].isin(filter_discs)]
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
 
-        # ----------------------------------------
-        # 图表 1: 装配系统全景透视
-        # ----------------------------------------
+
+        # ========================================
+        # 维度一：系统全局视角
+        # ========================================
         st.write("---")
         st.subheader("1️⃣ 装配系统全景透视")
         
@@ -571,14 +565,15 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
-            # ✅ 图表类型角标标注
             st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
-        # ----------------------------------------
+
+        # ========================================
+        # 维度二：单因子稳定性分析
+        # ========================================
         # 图表 2: 盘型号稳定性分析
-        # ----------------------------------------
         st.write("---")
         st.subheader("2️⃣ 盘型号稳定性分析")
         
@@ -596,10 +591,10 @@ elif app_mode == "📈 间隙数据分析看板":
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
             st.plotly_chart(fig_disc, use_container_width=True)
             st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：箱线图</div>", unsafe_allow_html=True)
+        else:
+            st.info("数据不足")
 
-        # ----------------------------------------
-        # 图表 3: 扇叶型号稳定性分析 (全新新增)
-        # ----------------------------------------
+        # 图表 3: 扇叶型号稳定性分析
         st.write("---")
         st.subheader("3️⃣ 扇叶型号稳定性分析")
         
@@ -611,7 +606,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 y="平均值", 
                 points="all", 
                 hover_data=["盘型号", "工单号", "角度"],
-                color_discrete_sequence=["#2ecc71"] # 区别于盘的颜色，扇叶使用绿色
+                color_discrete_sequence=["#2ecc71"] 
             )
             fig_fan.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_fan.update_layout(xaxis_tickangle=-45, height=450)
@@ -620,11 +615,37 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # ----------------------------------------
-        # 图表 4: 盘型号与扇叶型号交叉分析 (全新矩阵热力图)
-        # ----------------------------------------
+        # 图表 4: 装配角度稳定性分析 (全新新增)
         st.write("---")
-        st.subheader("4️⃣ 盘型号与扇叶型号交叉分析")
+        st.subheader("4️⃣ 装配角度稳定性分析")
+        
+        df_angle_stab = df_plot.dropna(subset=["角度", "平均值"]).copy()
+        if not df_angle_stab.empty:
+            df_angle_stab["角度_分类"] = df_angle_stab["角度"].astype(str) + "°"
+            df_angle_stab = df_angle_stab.sort_values(by="角度")
+            
+            fig_angle_stab = px.box(
+                df_angle_stab, 
+                x="角度_分类", 
+                y="平均值", 
+                points="all", 
+                hover_data=["盘型号", "扇叶型号", "工单号"],
+                color_discrete_sequence=["#9b59b6"] # 使用紫色区分角度
+            )
+            fig_angle_stab.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
+            fig_angle_stab.update_layout(xaxis_tickangle=-45, height=450, xaxis_title="装配角度")
+            st.plotly_chart(fig_angle_stab, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：箱线图</div>", unsafe_allow_html=True)
+        else:
+            st.info("数据不足")
+
+
+        # ========================================
+        # 维度三：双因子交叉矩阵分析
+        # ========================================
+        # 图表 5: 盘型号与扇叶型号交叉分析
+        st.write("---")
+        st.subheader("5️⃣ 盘型号与扇叶型号交叉分析")
         
         df_heatmap_fan = df_plot.dropna(subset=["扇叶型号", "盘型号", "平均值"]).copy()
         if not df_heatmap_fan.empty:
@@ -639,7 +660,7 @@ elif app_mode == "📈 间隙数据分析看板":
             fig_heat_fan = px.imshow(
                 pivot_fan, 
                 text_auto=".2f", 
-                aspect="auto", # 适应宽度，防止扇叶过多导致变形
+                aspect="auto", 
                 color_continuous_scale="RdYlGn_r",
                 labels=dict(x="扇叶型号", y="盘型号", color="平均间隙")
             )
@@ -649,38 +670,75 @@ elif app_mode == "📈 间隙数据分析看板":
         else:
             st.info("数据不足")
 
-        # ----------------------------------------
-        # 图表 5: 扇叶型号与装配角度交叉趋势分析 (全新引入)
-        # ----------------------------------------
+        # 图表 6: 盘型号与装配角度交叉分析
         st.write("---")
-        st.subheader("5️⃣ 扇叶型号与装配角度交叉趋势分析")
+        st.subheader("6️⃣ 盘型号与装配角度交叉分析")
         
-        df_angle_fan = df_plot.dropna(subset=["角度", "扇叶型号", "平均值"]).copy()
-        if not df_angle_fan.empty:
-            df_angle_fan["角度"] = pd.to_numeric(df_angle_fan["角度"])
-            df_angle_fan = df_angle_fan.sort_values(by="角度")
-            df_angle_fan["角度_分类"] = df_angle_fan["角度"].astype(str) + "°"
+        df_heatmap_disc_angle = df_plot.dropna(subset=["角度", "盘型号", "平均值"]).copy()
+        if not df_heatmap_disc_angle.empty:
+            df_heatmap_disc_angle["角度"] = pd.to_numeric(df_heatmap_disc_angle["角度"])
+            df_heatmap_disc_angle = df_heatmap_disc_angle.sort_values(by="角度")
             
-            fig_angle_fan = px.box(
-                df_angle_fan,
-                x="角度_分类",
-                y="平均值",
-                color="扇叶型号", # 用颜色区分扇叶
-                points="all",
-                hover_data=["盘型号", "工单号"]
+            pivot_disc_angle = pd.pivot_table(
+                df_heatmap_disc_angle, 
+                values="平均值", 
+                index="盘型号", 
+                columns="角度", 
+                aggfunc="mean"
             )
-            fig_angle_fan.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
-            fig_angle_fan.update_layout(height=500, xaxis_title="装配角度")
-            st.plotly_chart(fig_angle_fan, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：分组箱线图</div>", unsafe_allow_html=True)
+            pivot_disc_angle.columns = [f"{col}°" for col in pivot_disc_angle.columns]
+            
+            fig_heat_disc_angle = px.imshow(
+                pivot_disc_angle, 
+                text_auto=".2f", 
+                aspect="auto", 
+                color_continuous_scale="RdYlGn_r",
+                labels=dict(x="装配角度", y="盘型号", color="平均间隙")
+            )
+            fig_heat_disc_angle.update_layout(height=450)
+            st.plotly_chart(fig_heat_disc_angle, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
-        # ----------------------------------------
-        # 图表 6: 环境温度影响趋势
-        # ----------------------------------------
+        # 图表 7: 扇叶型号与装配角度交叉分析 (变更为直观的热力图)
         st.write("---")
-        st.subheader("6️⃣ 环境温度影响趋势")
+        st.subheader("7️⃣ 扇叶型号与装配角度交叉分析")
+        
+        df_heatmap_fan_angle = df_plot.dropna(subset=["角度", "扇叶型号", "平均值"]).copy()
+        if not df_heatmap_fan_angle.empty:
+            df_heatmap_fan_angle["角度"] = pd.to_numeric(df_heatmap_fan_angle["角度"])
+            df_heatmap_fan_angle = df_heatmap_fan_angle.sort_values(by="角度")
+            
+            pivot_fan_angle = pd.pivot_table(
+                df_heatmap_fan_angle, 
+                values="平均值", 
+                index="扇叶型号", 
+                columns="角度", 
+                aggfunc="mean"
+            )
+            pivot_fan_angle.columns = [f"{col}°" for col in pivot_fan_angle.columns]
+            
+            fig_heat_fan_angle = px.imshow(
+                pivot_fan_angle, 
+                text_auto=".2f", 
+                aspect="auto", 
+                color_continuous_scale="RdYlGn_r",
+                labels=dict(x="装配角度", y="扇叶型号", color="平均间隙")
+            )
+            fig_heat_fan_angle.update_layout(height=450)
+            st.plotly_chart(fig_heat_fan_angle, use_container_width=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+        else:
+            st.info("数据不足")
+
+
+        # ========================================
+        # 维度四：环境因子
+        # ========================================
+        # 图表 8: 环境温度影响趋势
+        st.write("---")
+        st.subheader("8️⃣ 环境温度影响趋势")
         
         df_temp_clean = df_plot.dropna(subset=["温度(°C)", "平均值"]).copy()
         if not df_temp_clean.empty:

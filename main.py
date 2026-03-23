@@ -563,12 +563,12 @@ elif app_mode == "📈 间隙数据分析看板":
                 path=["系统", "盘型号", "扇叶型号", "角度_分类"], 
                 values="数据量",
                 color="平均值",
-                color_continuous_scale="RdYlGn_r", 
+                color_continuous_scale="RdYlGn", 
                 hover_data={"平均值": ':.2f'}
             )
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -658,12 +658,12 @@ elif app_mode == "📈 间隙数据分析看板":
                 pivot_fan, 
                 text_auto=".2f", 
                 aspect="auto", 
-                color_continuous_scale="RdYlGn_r",
+                color_continuous_scale="RdYlGn",
                 labels=dict(x="扇叶型号", y="盘型号", color="平均间隙")
             )
             fig_heat_fan.update_layout(height=450)
             st.plotly_chart(fig_heat_fan, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -688,12 +688,12 @@ elif app_mode == "📈 间隙数据分析看板":
                 pivot_disc_angle, 
                 text_auto=".2f", 
                 aspect="auto", 
-                color_continuous_scale="RdYlGn_r",
+                color_continuous_scale="RdYlGn",
                 labels=dict(x="装配角度", y="盘型号", color="平均间隙")
             )
             fig_heat_disc_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_disc_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -718,12 +718,12 @@ elif app_mode == "📈 间隙数据分析看板":
                 pivot_fan_angle, 
                 text_auto=".2f", 
                 aspect="auto", 
-                color_continuous_scale="RdYlGn_r",
+                color_continuous_scale="RdYlGn",
                 labels=dict(x="装配角度", y="扇叶型号", color="平均间隙")
             )
             fig_heat_fan_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_fan_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -745,13 +745,13 @@ elif app_mode == "📈 间隙数据分析看板":
                 y="平均值",
                 text_auto=".2f", 
                 color="平均值",   
-                color_continuous_scale="RdYlBu_r", 
+                color_continuous_scale="RdYlGn", 
                 labels={"温度_取整": "环境温度 (°C)", "平均值": "整体平均间隙", "数据量": "测试记录数"},
                 hover_data=["数据量"]
             )
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")

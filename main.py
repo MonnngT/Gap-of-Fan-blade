@@ -150,6 +150,14 @@ def calculate_gap_count(disc_type_str):
         return num * 2
 
 # ==========================================
+# 自然排序算法 (核心功能：让 10ZL 排在 2ZL 后面，Z12 排在 Z6 后面)
+# ==========================================
+def natural_keys(text):
+    def atoi(text):
+        return int(text) if text.isdigit() else text
+    return [atoi(c) for c in re.split(r'(\d+)', str(text))]
+
+# ==========================================
 # 2. 侧边栏导航 & 连接测试
 # ==========================================
 sheet = get_google_sheet()
@@ -376,7 +384,8 @@ if app_mode == "📝 数据录入与管理":
                     date_range = []
                     st.warning("⚠️ 日期格式解析失败")
             with f_col2:
-                unique_fans = sorted(df_cloud["扇叶型号"].astype(str).unique().tolist())
+                # 在记录表筛选器中也加入自然排序
+                unique_fans = sorted(df_cloud["扇叶型号"].astype(str).unique().tolist(), key=natural_keys)
                 selected_fans = st.multiselect("🌀 按扇叶型号筛选", unique_fans, placeholder="默认显示所有")
             with f_col3:
                 search_kw = st.text_input("🔍 关键词搜索 (工单/模具号/任意内容)", placeholder="例如：333525")
@@ -527,19 +536,38 @@ elif app_mode == "📈 间隙数据分析看板":
         if "扇叶型号" in df_plot.columns:
             df_plot["扇叶型号"] = df_plot["扇叶型号"].fillna("未知扇叶").replace("", "未知扇叶")
 
+        # ==========================================
+        # 全局统一自然排序配置 (为图表提供基准顺序)
+        # ==========================================
+        # 1. 盘型号排序
+        all_unique_discs = df_plot["盘型号"].astype(str).unique().tolist()
+        sorted_all_discs = sorted(all_unique_discs, key=natural_keys)
+        
+        # 2. 扇叶型号排序
+        all_unique_fans = df_plot["扇叶型号"].astype(str).unique().tolist()
+        sorted_all_fans = sorted(all_unique_fans, key=natural_keys)
+        
+        # 3. 角度排序
+        valid_angles = df_plot["角度"].dropna().unique().tolist()
+        sorted_angles = sorted(valid_angles) # 角度本身是数字，直接 sort 即可
+        sorted_angle_labels = [f"{a}°" for a in sorted_angles]
+        
+        # Plotly 图表统一使用的排序参数字典
+        global_cat_orders = {
+            "盘型号": sorted_all_discs,
+            "扇叶型号": sorted_all_fans,
+            "角度_分类": sorted_angle_labels
+        }
+
         # --- 顶部全局筛选器 ---
         with st.expander("⚙️ 图表全局筛选器", expanded=False):
             c1, c2, c3 = st.columns(3)
             with c1:
-                all_discs = sorted(df_plot["盘型号"].astype(str).unique().tolist())
-                filter_discs = st.multiselect("选择【盘型号】:", all_discs, default=[])
+                filter_discs = st.multiselect("选择【盘型号】:", sorted_all_discs, default=[])
             with c2:
-                all_fans = sorted(df_plot["扇叶型号"].astype(str).unique().tolist())
-                filter_fans = st.multiselect("选择【扇叶型号】:", all_fans, default=[])
+                filter_fans = st.multiselect("选择【扇叶型号】:", sorted_all_fans, default=[])
             with c3:
-                valid_angles = df_plot["角度"].dropna().unique().tolist()
-                all_angles = sorted(valid_angles)
-                filter_angles = st.multiselect("选择【装配角度】:", all_angles, default=[])
+                filter_angles = st.multiselect("选择【装配角度】:", sorted_angles, default=[])
             
             if filter_discs: df_plot = df_plot[df_plot["盘型号"].isin(filter_discs)]
             if filter_fans: df_plot = df_plot[df_plot["扇叶型号"].isin(filter_fans)]
@@ -586,7 +614,8 @@ elif app_mode == "📈 间隙数据分析看板":
                 y="平均值", 
                 points="all", 
                 hover_data=["扇叶型号", "工单号", "角度"],
-                color_discrete_sequence=["#3498db"]
+                color_discrete_sequence=["#3498db"],
+                category_orders=global_cat_orders # ✅ 引入自然排序
             )
             fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
@@ -606,7 +635,8 @@ elif app_mode == "📈 间隙数据分析看板":
                 y="平均值", 
                 points="all", 
                 hover_data=["盘型号", "工单号", "角度"],
-                color_discrete_sequence=["#2ecc71"] 
+                color_discrete_sequence=["#2ecc71"],
+                category_orders=global_cat_orders # ✅ 引入自然排序
             )
             fig_fan.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_fan.update_layout(xaxis_tickangle=-45, height=450)
@@ -621,15 +651,15 @@ elif app_mode == "📈 间隙数据分析看板":
         df_angle_stab = df_plot.dropna(subset=["角度", "平均值"]).copy()
         if not df_angle_stab.empty:
             df_angle_stab["角度_分类"] = df_angle_stab["角度"].astype(str) + "°"
-            df_angle_stab = df_angle_stab.sort_values(by="角度")
-            
+            # 此处可以不再强排 df，因为 category_orders 会自动处理坐标轴顺序
             fig_angle_stab = px.box(
                 df_angle_stab, 
                 x="角度_分类", 
                 y="平均值", 
                 points="all", 
                 hover_data=["盘型号", "扇叶型号", "工单号"],
-                color_discrete_sequence=["#9b59b6"]
+                color_discrete_sequence=["#9b59b6"],
+                category_orders=global_cat_orders # ✅ 引入自然排序
             )
             fig_angle_stab.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_angle_stab.update_layout(xaxis_tickangle=-45, height=450, xaxis_title="装配角度")
@@ -653,6 +683,10 @@ elif app_mode == "📈 间隙数据分析看板":
                 columns="扇叶型号", 
                 aggfunc="mean"
             )
+            # ✅ 对热力图矩阵的行和列进行自然排序重构
+            index_sorted = [d for d in sorted_all_discs if d in pivot_fan.index]
+            cols_sorted = [f for f in sorted_all_fans if f in pivot_fan.columns]
+            pivot_fan = pivot_fan.reindex(index=index_sorted, columns=cols_sorted)
             
             fig_heat_fan = px.imshow(
                 pivot_fan, 
@@ -672,9 +706,6 @@ elif app_mode == "📈 间隙数据分析看板":
         
         df_heatmap_disc_angle = df_plot.dropna(subset=["角度", "盘型号", "平均值"]).copy()
         if not df_heatmap_disc_angle.empty:
-            df_heatmap_disc_angle["角度"] = pd.to_numeric(df_heatmap_disc_angle["角度"])
-            df_heatmap_disc_angle = df_heatmap_disc_angle.sort_values(by="角度")
-            
             pivot_disc_angle = pd.pivot_table(
                 df_heatmap_disc_angle, 
                 values="平均值", 
@@ -683,6 +714,11 @@ elif app_mode == "📈 间隙数据分析看板":
                 aggfunc="mean"
             )
             pivot_disc_angle.columns = [f"{col}°" for col in pivot_disc_angle.columns]
+            
+            # ✅ 对热力图矩阵的行和列进行自然排序重构
+            index_sorted = [d for d in sorted_all_discs if d in pivot_disc_angle.index]
+            cols_sorted = [a for a in sorted_angle_labels if a in pivot_disc_angle.columns]
+            pivot_disc_angle = pivot_disc_angle.reindex(index=index_sorted, columns=cols_sorted)
             
             fig_heat_disc_angle = px.imshow(
                 pivot_disc_angle, 
@@ -702,9 +738,6 @@ elif app_mode == "📈 间隙数据分析看板":
         
         df_heatmap_fan_angle = df_plot.dropna(subset=["角度", "扇叶型号", "平均值"]).copy()
         if not df_heatmap_fan_angle.empty:
-            df_heatmap_fan_angle["角度"] = pd.to_numeric(df_heatmap_fan_angle["角度"])
-            df_heatmap_fan_angle = df_heatmap_fan_angle.sort_values(by="角度")
-            
             pivot_fan_angle = pd.pivot_table(
                 df_heatmap_fan_angle, 
                 values="平均值", 
@@ -713,6 +746,11 @@ elif app_mode == "📈 间隙数据分析看板":
                 aggfunc="mean"
             )
             pivot_fan_angle.columns = [f"{col}°" for col in pivot_fan_angle.columns]
+            
+            # ✅ 对热力图矩阵的行和列进行自然排序重构
+            index_sorted = [f for f in sorted_all_fans if f in pivot_fan_angle.index]
+            cols_sorted = [a for a in sorted_angle_labels if a in pivot_fan_angle.columns]
+            pivot_fan_angle = pivot_fan_angle.reindex(index=index_sorted, columns=cols_sorted)
             
             fig_heat_fan_angle = px.imshow(
                 pivot_fan_angle, 

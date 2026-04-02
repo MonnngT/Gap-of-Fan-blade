@@ -579,29 +579,29 @@ elif app_mode == "📈 间隙数据分析看板":
             df_tree["角度_分类"] = df_tree["角度"].astype(str) + "°"
             df_tree["系统"] = "总数据"
             
-            # ✅ 新增：在进行树图聚合前，应用自然排序生成排序列
             df_tree["盘_sort"] = df_tree["盘型号"].apply(lambda x: tuple(natural_keys(str(x))))
             df_tree["扇_sort"] = df_tree["扇叶型号"].apply(lambda x: tuple(natural_keys(str(x))))
             df_tree["角_sort"] = df_tree["角度_分类"].apply(lambda x: tuple(natural_keys(str(x))))
             
             df_tree_agg = df_tree.groupby(["系统", "盘_sort", "扇_sort", "角_sort", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
-            # 严格按照自然排序重新排列数据帧
             df_tree_agg = df_tree_agg.sort_values(by=["盘_sort", "扇_sort", "角_sort"])
+            
+            # ✅ 新增：强制每个方块分配一样的基础面积，避免小数据量被挤压变形
+            df_tree_agg["均等面积"] = 1 
             
             fig_tree = px.treemap(
                 df_tree_agg, 
                 path=["系统", "盘型号", "扇叶型号", "角度_分类"], 
-                values="数据量",
+                values="均等面积", # 使用均等面积代替原先的数据量
                 color="平均值",
                 color_continuous_scale="RdYlGn", 
-                hover_data={"平均值": ':.2f'}
+                hover_data={"平均值": ':.2f', "数据量": True, "均等面积": False} # 隐藏辅助面积字段，保留真实数据量展示
             )
-            # ✅ 强制关闭 Plotly 的默认按面积大小重排，严格遵循数据排序
             fig_tree.update_traces(sort=False)
             
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -702,7 +702,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_fan.update_layout(height=450)
             st.plotly_chart(fig_heat_fan, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -733,7 +733,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_disc_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_disc_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -764,7 +764,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_fan_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_fan_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -793,6 +793,6 @@ elif app_mode == "📈 间隙数据分析看板":
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")

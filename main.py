@@ -150,7 +150,7 @@ def calculate_gap_count(disc_type_str):
         return num * 2
 
 # ==========================================
-# 自然排序算法 (核心功能：让 10ZL 排在 2ZL 后面，Z12 排在 Z6 后面)
+# 自然排序算法
 # ==========================================
 def natural_keys(text):
     def atoi(text):
@@ -384,7 +384,6 @@ if app_mode == "📝 数据录入与管理":
                     date_range = []
                     st.warning("⚠️ 日期格式解析失败")
             with f_col2:
-                # 在记录表筛选器中也加入自然排序
                 unique_fans = sorted(df_cloud["扇叶型号"].astype(str).unique().tolist(), key=natural_keys)
                 selected_fans = st.multiselect("🌀 按扇叶型号筛选", unique_fans, placeholder="默认显示所有")
             with f_col3:
@@ -537,22 +536,18 @@ elif app_mode == "📈 间隙数据分析看板":
             df_plot["扇叶型号"] = df_plot["扇叶型号"].fillna("未知扇叶").replace("", "未知扇叶")
 
         # ==========================================
-        # 全局统一自然排序配置 (为图表提供基准顺序)
+        # 全局统一自然排序配置
         # ==========================================
-        # 1. 盘型号排序
         all_unique_discs = df_plot["盘型号"].astype(str).unique().tolist()
         sorted_all_discs = sorted(all_unique_discs, key=natural_keys)
         
-        # 2. 扇叶型号排序
         all_unique_fans = df_plot["扇叶型号"].astype(str).unique().tolist()
         sorted_all_fans = sorted(all_unique_fans, key=natural_keys)
         
-        # 3. 角度排序
         valid_angles = df_plot["角度"].dropna().unique().tolist()
-        sorted_angles = sorted(valid_angles) # 角度本身是数字，直接 sort 即可
+        sorted_angles = sorted(valid_angles) 
         sorted_angle_labels = [f"{a}°" for a in sorted_angles]
         
-        # Plotly 图表统一使用的排序参数字典
         global_cat_orders = {
             "盘型号": sorted_all_discs,
             "扇叶型号": sorted_all_fans,
@@ -584,7 +579,14 @@ elif app_mode == "📈 间隙数据分析看板":
             df_tree["角度_分类"] = df_tree["角度"].astype(str) + "°"
             df_tree["系统"] = "总数据"
             
-            df_tree_agg = df_tree.groupby(["系统", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
+            # ✅ 新增：在进行树图聚合前，应用自然排序生成排序列
+            df_tree["盘_sort"] = df_tree["盘型号"].apply(lambda x: tuple(natural_keys(str(x))))
+            df_tree["扇_sort"] = df_tree["扇叶型号"].apply(lambda x: tuple(natural_keys(str(x))))
+            df_tree["角_sort"] = df_tree["角度_分类"].apply(lambda x: tuple(natural_keys(str(x))))
+            
+            df_tree_agg = df_tree.groupby(["系统", "盘_sort", "扇_sort", "角_sort", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
+            # 严格按照自然排序重新排列数据帧
+            df_tree_agg = df_tree_agg.sort_values(by=["盘_sort", "扇_sort", "角_sort"])
             
             fig_tree = px.treemap(
                 df_tree_agg, 
@@ -594,9 +596,12 @@ elif app_mode == "📈 间隙数据分析看板":
                 color_continuous_scale="RdYlGn", 
                 hover_data={"平均值": ':.2f'}
             )
+            # ✅ 强制关闭 Plotly 的默认按面积大小重排，严格遵循数据排序
+            fig_tree.update_traces(sort=False)
+            
             fig_tree.update_layout(height=500, margin=dict(t=30, l=10, r=10, b=10))
             st.plotly_chart(fig_tree, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：矩形树图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -615,7 +620,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 points="all", 
                 hover_data=["扇叶型号", "工单号", "角度"],
                 color_discrete_sequence=["#3498db"],
-                category_orders=global_cat_orders # ✅ 引入自然排序
+                category_orders=global_cat_orders 
             )
             fig_disc.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_disc.update_layout(xaxis_tickangle=-45, height=450)
@@ -636,7 +641,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 points="all", 
                 hover_data=["盘型号", "工单号", "角度"],
                 color_discrete_sequence=["#2ecc71"],
-                category_orders=global_cat_orders # ✅ 引入自然排序
+                category_orders=global_cat_orders 
             )
             fig_fan.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_fan.update_layout(xaxis_tickangle=-45, height=450)
@@ -651,7 +656,7 @@ elif app_mode == "📈 间隙数据分析看板":
         df_angle_stab = df_plot.dropna(subset=["角度", "平均值"]).copy()
         if not df_angle_stab.empty:
             df_angle_stab["角度_分类"] = df_angle_stab["角度"].astype(str) + "°"
-            # 此处可以不再强排 df，因为 category_orders 会自动处理坐标轴顺序
+            
             fig_angle_stab = px.box(
                 df_angle_stab, 
                 x="角度_分类", 
@@ -659,7 +664,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 points="all", 
                 hover_data=["盘型号", "扇叶型号", "工单号"],
                 color_discrete_sequence=["#9b59b6"],
-                category_orders=global_cat_orders # ✅ 引入自然排序
+                category_orders=global_cat_orders 
             )
             fig_angle_stab.add_hline(y=0, line_dash="dash", line_color="red", line_width=3)
             fig_angle_stab.update_layout(xaxis_tickangle=-45, height=450, xaxis_title="装配角度")
@@ -683,7 +688,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 columns="扇叶型号", 
                 aggfunc="mean"
             )
-            # ✅ 对热力图矩阵的行和列进行自然排序重构
+            
             index_sorted = [d for d in sorted_all_discs if d in pivot_fan.index]
             cols_sorted = [f for f in sorted_all_fans if f in pivot_fan.columns]
             pivot_fan = pivot_fan.reindex(index=index_sorted, columns=cols_sorted)
@@ -697,7 +702,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_fan.update_layout(height=450)
             st.plotly_chart(fig_heat_fan, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -715,7 +720,6 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             pivot_disc_angle.columns = [f"{col}°" for col in pivot_disc_angle.columns]
             
-            # ✅ 对热力图矩阵的行和列进行自然排序重构
             index_sorted = [d for d in sorted_all_discs if d in pivot_disc_angle.index]
             cols_sorted = [a for a in sorted_angle_labels if a in pivot_disc_angle.columns]
             pivot_disc_angle = pivot_disc_angle.reindex(index=index_sorted, columns=cols_sorted)
@@ -729,7 +733,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_disc_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_disc_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -747,7 +751,6 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             pivot_fan_angle.columns = [f"{col}°" for col in pivot_fan_angle.columns]
             
-            # ✅ 对热力图矩阵的行和列进行自然排序重构
             index_sorted = [f for f in sorted_all_fans if f in pivot_fan_angle.index]
             cols_sorted = [a for a in sorted_angle_labels if a in pivot_fan_angle.columns]
             pivot_fan_angle = pivot_fan_angle.reindex(index=index_sorted, columns=cols_sorted)
@@ -761,7 +764,7 @@ elif app_mode == "📈 间隙数据分析看板":
             )
             fig_heat_fan_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_fan_angle, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：热力图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
 
@@ -790,6 +793,6 @@ elif app_mode == "📈 间隙数据分析看板":
             fig_temp.update_xaxes(type='category')
             fig_temp.update_layout(height=450)
             st.plotly_chart(fig_temp, use_container_width=True)
-            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")

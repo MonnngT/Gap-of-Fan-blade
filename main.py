@@ -878,7 +878,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 st.markdown("###### 💡 预测结果与底层公式")
 
                 if is_interference:
-                    st.markdown(f"### 预期平均间隙：<span style='color:red'>0.000</span> <span style='font-size:18px; color:red;'>(⚠️ 理论值为 {raw_pred_value:.3f}，存在物理干涉/碰擦)</span>", unsafe_allow_html=True)
+                    st.markdown(f"### 预期平均间隙：<span style='color:red'>0.000</span> <span style='font-size:18px; color:red;'>(⚠️ 理论值为 {raw_pred_value:.3f})</span>", unsafe_allow_html=True)
                 else:
                     pred_color = "red" if pred_value <= 0.05 else "green" 
                     st.markdown(f"### 预期平均间隙：<span style='color:{pred_color}'>{pred_value:.3f}</span>", unsafe_allow_html=True)
@@ -893,7 +893,7 @@ elif app_mode == "📈 间隙数据分析看板":
                     f"+ 角度影响 ({pred_angle} × {angle_coef:.4f} = {pred_angle * angle_coef:.4f})"
                 )
                 if is_interference:
-                    formula_str += f"<br><br>*📌 注：数学模型计算的理论间隙为负值，但在实际物理装配中，间隙最小为 0，代表此时部件已经发生碰撞或干涉。*"
+                    formula_str += f"<br><br>*📌 注：数学模型计算的理论间隙为负值，但在实际物理装配中，间隙最小为 0。*"
                     
                 st.info(formula_str)
 

@@ -9,6 +9,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ==========================================
+# [新增] 尝试导入机器学习库 (用于智能预测)
+# ==========================================
+try:
+    from sklearn.linear_model import LinearRegression
+    from sklearn.preprocessing import OneHotEncoder
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    HAS_SKLEARN = True
+except ImportError:
+    HAS_SKLEARN = False
+
+# ==========================================
 # 1. 基础配置 & 谷歌表格连接
 # ==========================================
 st.set_page_config(page_title="间隙测量数据记录系统", page_icon="📏", layout="wide")
@@ -585,17 +597,15 @@ elif app_mode == "📈 间隙数据分析看板":
             
             df_tree_agg = df_tree.groupby(["系统", "盘_sort", "扇_sort", "角_sort", "盘型号", "扇叶型号", "角度_分类"]).agg({"平均值": "mean", "数据量": "sum"}).reset_index()
             df_tree_agg = df_tree_agg.sort_values(by=["盘_sort", "扇_sort", "角_sort"])
-            
-            # ✅ 新增：强制每个方块分配一样的基础面积，避免小数据量被挤压变形
             df_tree_agg["均等面积"] = 1 
             
             fig_tree = px.treemap(
                 df_tree_agg, 
                 path=["系统", "盘型号", "扇叶型号", "角度_分类"], 
-                values="均等面积", # 使用均等面积代替原先的数据量
+                values="均等面积", 
                 color="平均值",
                 color_continuous_scale="RdYlGn", 
-                hover_data={"平均值": ':.2f', "数据量": True, "均等面积": False} # 隐藏辅助面积字段，保留真实数据量展示
+                hover_data={"平均值": ':.2f', "数据量": True, "均等面积": False} 
             )
             fig_tree.update_traces(sort=False)
             
@@ -796,3 +806,87 @@ elif app_mode == "📈 间隙数据分析看板":
             st.markdown("<div style='font-size: 12px; color: #888888; margin-top: -10px;'>图表类型：聚合柱状图 (颜色越红代表间隙越小)</div>", unsafe_allow_html=True)
         else:
             st.info("数据不足")
+
+        # ========================================
+        # 维度五：AI 预测引擎 (新功能)
+        # ========================================
+        st.write("---")
+        st.subheader("9️⃣ 🔮 智能间隙预测与公式推导 (AI驱动)")
+        
+        if not HAS_SKLEARN:
+            st.error("🚨 系统检测到缺少机器学习核心库 `scikit-learn`。请在您的代码运行环境（或云端 `requirements.txt` 文件）中添加一行 `scikit-learn`，然后重启应用即可解锁此功能！")
+        else:
+            df_ml = df_plot.dropna(subset=["盘型号", "扇叶型号", "角度", "平均值"]).copy()
+            if len(df_ml) >= 10:
+                # 1. 准备特征和标签
+                X = df_ml[["盘型号", "扇叶型号", "角度"]]
+                y = df_ml["平均值"]
+
+                # 2. 构建预处理和模型管道
+                preprocessor = ColumnTransformer(
+                    transformers=[
+                        ('cat', OneHotEncoder(handle_unknown='ignore'), ['盘型号', '扇叶型号']),
+                        ('num', 'passthrough', ['角度'])
+                    ])
+
+                model = Pipeline(steps=[('preprocessor', preprocessor),
+                                        ('regressor', LinearRegression())])
+
+                # 3. 训练模型
+                model.fit(X, y)
+                score = model.score(X, y)
+
+                # 4. UI 交互：用户输入预测条件
+                st.markdown("###### 🎯 模拟装配条件")
+                col_p1, col_p2, col_p3 = st.columns(3)
+                with col_p1:
+                    pred_disc = st.selectbox("选择模拟【盘型号】:", sorted_all_discs, key="pred_disc")
+                with col_p2:
+                    pred_fan = st.selectbox("选择模拟【扇叶型号】:", sorted_all_fans, key="pred_fan")
+                with col_p3:
+                    pred_angle = st.number_input("输入模拟【角度】:", min_value=10.0, max_value=60.0, value=30.0, step=0.5, key="pred_angle")
+
+                # 5. 进行预测
+                X_pred = pd.DataFrame({"盘型号": [pred_disc], "扇叶型号": [pred_fan], "角度": [pred_angle]})
+                pred_value = model.predict(X_pred)[0]
+
+                # 6. 提取公式系数
+                reg = model.named_steps['regressor']
+                intercept = reg.intercept_
+                cat_encoder = preprocessor.named_transformers_['cat']
+                cat_feature_names = cat_encoder.get_feature_names_out(['盘型号', '扇叶型号'])
+                all_feature_names = list(cat_feature_names) + ['角度']
+                coefs = reg.coef_
+
+                disc_coef = 0.0
+                fan_coef = 0.0
+                angle_coef = coefs[-1]
+
+                disc_feature_name = f"盘型号_{pred_disc}"
+                fan_feature_name = f"扇叶型号_{pred_fan}"
+
+                if disc_feature_name in all_feature_names:
+                    disc_coef = coefs[list(all_feature_names).index(disc_feature_name)]
+                if fan_feature_name in all_feature_names:
+                    fan_coef = coefs[list(all_feature_names).index(fan_feature_name)]
+
+                # 7. 展示结果
+                st.markdown("###### 💡 预测结果与底层公式")
+
+                pred_color = "red" if pred_value <= 0 else "green"
+                st.markdown(f"### 预期平均间隙：<span style='color:{pred_color}'>{pred_value:.3f}</span>", unsafe_allow_html=True)
+
+                formula_str = (
+                    f"**间隙公式** = 基础常量 ({intercept:.4f}) "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"+ {pred_disc} 专属修正值 ({disc_coef:.4f}) "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"+ {pred_fan} 专属修正值 ({fan_coef:.4f}) "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"+ 角度影响 ({pred_angle} × {angle_coef:.4f} = {pred_angle * angle_coef:.4f})"
+                )
+                st.info(formula_str)
+
+                st.caption(f"当前模型基于 **{len(df_ml)}** 条历史数据自动训练生成。拟合度 (R² Score): {score:.2f}。系统每录入一条新数据，以上公式参数均会自动微调优化。")
+            else:
+                st.info("⚠️ 历史有效数据量不足 (少于10条)，AI 暂无法推导准确公式。请继续录入数据。")

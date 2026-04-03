@@ -811,7 +811,6 @@ elif app_mode == "📈 间隙数据分析看板":
         # 维度五：AI 预测引擎 
         # ========================================
         st.write("---")
-        # ✅ 更新标题：去掉多余修饰与水晶球图标
         st.subheader("9️⃣ 间隙预测")
         
         if not HAS_SKLEARN:
@@ -849,7 +848,11 @@ elif app_mode == "📈 间隙数据分析看板":
 
                 # 5. 进行预测
                 X_pred = pd.DataFrame({"盘型号": [pred_disc], "扇叶型号": [pred_fan], "角度": [pred_angle]})
-                pred_value = model.predict(X_pred)[0]
+                raw_pred_value = model.predict(X_pred)[0]
+                
+                # 物理极限制约：间隙不可能为负
+                is_interference = raw_pred_value < 0
+                pred_value = max(0.0, raw_pred_value)
 
                 # 6. 提取公式系数
                 reg = model.named_steps['regressor']
@@ -874,18 +877,24 @@ elif app_mode == "📈 间隙数据分析看板":
                 # 7. 展示结果
                 st.markdown("###### 💡 预测结果与底层公式")
 
-                pred_color = "red" if pred_value <= 0 else "green"
-                st.markdown(f"### 预期平均间隙：<span style='color:{pred_color}'>{pred_value:.3f}</span>", unsafe_allow_html=True)
+                if is_interference:
+                    st.markdown(f"### 预期平均间隙：<span style='color:red'>0.000</span> <span style='font-size:18px; color:red;'>(⚠️ 理论值为 {raw_pred_value:.3f}，存在物理干涉/碰擦)</span>", unsafe_allow_html=True)
+                else:
+                    pred_color = "red" if pred_value <= 0.05 else "green" 
+                    st.markdown(f"### 预期平均间隙：<span style='color:{pred_color}'>{pred_value:.3f}</span>", unsafe_allow_html=True)
 
                 formula_str = (
-                    f"**间隙公式** = 基础常量 ({intercept:.4f}) "
-                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"**理论公式** = 基础常量 ({intercept:.4f}) "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
                     f"+ {pred_disc} 专属修正值 ({disc_coef:.4f}) "
-                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
                     f"+ {pred_fan} 专属修正值 ({fan_coef:.4f}) "
-                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+                    f"<br> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
                     f"+ 角度影响 ({pred_angle} × {angle_coef:.4f} = {pred_angle * angle_coef:.4f})"
                 )
+                if is_interference:
+                    formula_str += f"<br><br>*📌 注：数学模型计算的理论间隙为负值，但在实际物理装配中，间隙最小为 0，代表此时部件已经发生碰撞或干涉。*"
+                    
                 st.info(formula_str)
 
                 st.caption(f"当前模型基于 **{len(df_ml)}** 条历史数据自动训练生成。拟合度 (R² Score): {score:.2f}。系统每录入一条新数据，以上公式参数均会自动微调优化。")

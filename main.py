@@ -752,17 +752,21 @@ elif app_mode == "📈 间隙数据分析看板":
         
         df_heatmap_fan_angle = df_plot.dropna(subset=["角度", "扇叶型号", "平均值"]).copy()
         if not df_heatmap_fan_angle.empty:
+            df_heatmap_fan_angle["角度"] = pd.to_numeric(df_heatmap_fan_angle["角度"])
+            
+            # ✅ 修改：行列互换，角度为纵轴 (index)，扇叶为横轴 (columns)
             pivot_fan_angle = pd.pivot_table(
                 df_heatmap_fan_angle, 
                 values="平均值", 
-                index="扇叶型号", 
-                columns="角度", 
+                index="角度",       # 纵轴：角度
+                columns="扇叶型号", # 横轴：扇叶
                 aggfunc="mean"
             )
-            pivot_fan_angle.columns = [f"{col}°" for col in pivot_fan_angle.columns]
+            pivot_fan_angle.index = [f"{idx}°" for idx in pivot_fan_angle.index]
             
-            index_sorted = [f for f in sorted_all_fans if f in pivot_fan_angle.index]
-            cols_sorted = [a for a in sorted_angle_labels if a in pivot_fan_angle.columns]
+            # ✅ 对应修改排序逻辑：index排角度，columns排扇叶
+            index_sorted = [a for a in sorted_angle_labels if a in pivot_fan_angle.index]
+            cols_sorted = [f for f in sorted_all_fans if f in pivot_fan_angle.columns]
             pivot_fan_angle = pivot_fan_angle.reindex(index=index_sorted, columns=cols_sorted)
             
             fig_heat_fan_angle = px.imshow(
@@ -770,7 +774,7 @@ elif app_mode == "📈 间隙数据分析看板":
                 text_auto=".2f", 
                 aspect="auto", 
                 color_continuous_scale="RdYlGn",
-                labels=dict(x="装配角度", y="扇叶型号", color="平均间隙")
+                labels=dict(x="扇叶型号", y="装配角度", color="平均间隙") # 对应修改标签
             )
             fig_heat_fan_angle.update_layout(height=450)
             st.plotly_chart(fig_heat_fan_angle, use_container_width=True)
@@ -893,7 +897,7 @@ elif app_mode == "📈 间隙数据分析看板":
                     f"+ 角度影响 ({pred_angle} × {angle_coef:.4f} = {pred_angle * angle_coef:.4f})"
                 )
                 if is_interference:
-                    formula_str += f"<br><br>*📌 注：数学模型计算的理论间隙为负值，但在实际物理装配中，间隙最小为 0。*"
+                    formula_str += f"<br><br>*注：数学模型计算的理论间隙为负值，但在实际物理装配中，间隙最小为 0。*"
                     
                 st.info(formula_str)
 

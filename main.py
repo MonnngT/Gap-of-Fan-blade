@@ -148,8 +148,6 @@ DISC_CONFIG_W_OTHER = {
 }
 DISC_CONFIG_G = {"G3盘": ["G-Retaining plate/3 (PN: 28030805500) X2"], "G5盘": ["G-Retaining plate/5 (PN: 28050805500) X2"], "G6盘": ["G-Retaining Plate/6 (PN: 28060805500) X2"], "G8盘": ["G-Retaining Plate/8 (PN: 28080805500) X2"]}
 DISC_CONFIG_P = {"PMAX9盘 (PMAX40系列)": ["PMAX40-Retaining Plate/9 + Hub Plate/9/Flange (Ret: 23090702801, Hub: 23090714101)", "PMAX40-Retaining Plate/9 + Hub Plate/9/T13 (Ret: 23090702801, Hub: 23090779001)"]}
-
-# ✅ [修改]：在此处增加了 26 和 39
 ANGLES_LIST = [16.5, 20, 21.5, 22.5, 23.5, 24, 25, 26, 26.5, 27.5, 28.5, 29, 30, 31, 31.5, 32.5, 33.5, 34, 35, 36, 36.5, 37.5, 38.5, 39, 40, 41, 41.5, 42.5, 43.5, 44, 45, 46.5, 47.5, 48.5, 50, 53.5]
 
 def calculate_gap_count(disc_type_str):
